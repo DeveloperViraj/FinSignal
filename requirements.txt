@@ -1,0 +1,26 @@
+# Runtime dependencies — exact pins (docs/AUDIT.md H4).
+# Regenerate deliberately: bump a pin, run the test suite, commit.
+fastapi==0.139.0
+uvicorn==0.49.0
+python-dotenv==1.2.2
+requests==2.34.2
+pydantic==2.13.4
+yfinance==1.5.1
+pandas==2.3.3
+numpy==2.2.6
+pyarrow==18.1.0
+beautifulsoup4==4.15.0
+lxml==6.1.1
+aiohttp==3.14.1
+fpdf2==2.8.7
+fredapi==0.5.2
+groq==1.5.0
+supabase==2.31.0
+PyJWT==2.13.0
+cryptography==49.0.0
+
+# Agent orchestration. LangGraph sequences the existing deterministic services
+# and computes nothing itself; src/agents/graph.py degrades to the sequential
+# orchestrator and records `langgraph_unavailable` if the import fails, so a
+# deployment that cannot carry it still produces an analysis.
+langgraph==1.2.11

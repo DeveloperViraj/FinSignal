@@ -1,0 +1,141 @@
+# Private AI / agent tooling
+.agent/
+.claude/
+dashboard/.claude/
+dashboard/.cc-writes/
+
+# Local IDE / agent state
+.cc-writes/
+
+# Node / Next.js
+node_modules/
+.next/
+.next-stale-*/
+dashboard/node_modules/
+dashboard/.next/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+
+# Large or temporary notebooks (optional, remove if you want to track all)
+notebooks/Research_Week_*_Simulation.*
+
+# Environment variables (contain API keys) — every variant, root and dashboard
+.env
+.env.local
+.env.*.local
+dashboard/.env
+dashboard/.env.local
+dashboard/.env.*.local
+
+# Test cache
+.pytest_cache/
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# Virtual environments
+venv/
+.venv/
+
+# Dashboard build artifacts
+dashboard/node_modules/
+dashboard/.next/
+
+# Vercel
+.vercel/
+
+.coverage
+
+# Generated research reports (pipeline output, not source)
+research_vault/*
+!research_vault/EXAMPLE_NVDA_report.md
+
+# Panel snapshots (build artifacts — reproducible from the manifest)
+data/panel/
+.vercel
+.env*
+
+# ── Research data: acquired, never committed ────────────────────────────────
+#
+# `datasets/` holds Dolt clones measured at 14 GB (stocks 4.4G, options 8.0G,
+# earnings 1.7G, rates 13M). `data/research/` holds the derived partitions,
+# universe, model registry and study reports.
+#
+# Neither is committed, and neither needs to be: both are reproducible from
+# recorded provenance. Every raw manifest records the clone's resolved COMMIT
+# HASH (e.g. stocks@h4k31feneele009f7t15a022qjtn2970), not a branch name, so a
+# rebuild can be pinned to the same bytes. Acquisition is documented in
+# docs/research-data.md and docs/dataset-catalog.md.
+#
+#   dolt clone post-no-preference/stocks datasets/stocks
+#   python -m scripts.quant.local_backfill --stage all
+#
+# LEADING SLASH IS LOAD-BEARING. An unanchored `datasets/` matches a directory
+# of that name at ANY depth, which silently excluded `src/quant/datasets/` —
+# the entire ingestion package — from a commit. Anchored to the repository root
+# it means only the clones.
+/datasets/
+/data/research/
+
+# ...except the model register, which is not data.
+#
+# `/data/research/` exists to exclude derived partitions measured in gigabytes.
+# The register is a 1.5 MB evidence ledger that records every model, its
+# metrics, and its promotion state — and it is the ONLY place a promotion can be
+# recorded. It was caught by this rule because of where it happens to live, and
+# the consequence reached production: the deployed backend read no register,
+# found no entries, and reported "no model is validated" as a conclusion drawn
+# from a file that was not in the image.
+#
+# Git cannot re-include a file beneath an excluded directory, so the whole path
+# chain is re-admitted one level at a time. The `*` lines keep everything else
+# in those directories excluded.
+!/data/research/
+/data/research/*
+!/data/research/models/
+/data/research/models/*
+!/data/research/models/registry.json
+/data/panel/
+
+# Training and ingestion logs — reproducible output, often large.
+/logs/
+
+# Experiment artifacts: keep the ones a decision rests on, exclude the bulk.
+#
+# metrics/config/manifest/folds/portfolio are small and are the evidence a
+# reader needs. Per-row predictions run to tens of megabytes and are fully
+# regenerable from the recorded seed, dataset content hash and git commit, so
+# they stay local — the same rule that keeps raw partitions out.
+experiments/*/predictions_*.parquet
+
+# Crash-safety resume checkpoints, for the same reason.
+#
+# `heavy_run.py` appends one JSON record per evaluated configuration to
+# `checkpoints/configs.jsonl` so an interrupted search resumes where it
+# stopped. It is a working file of a run, not the record of one: the evidence
+# a reader needs is `search.json` beside it and the selection artifact under
+# `artifacts/experiments/`, both of which are tracked.
+#
+# Ignored rather than merely left untracked, because an untracked file in a
+# research tree is one `git add -A` away from being committed, and this one is
+# an active dependency of a resumable experiment — 873 records and half a
+# megabyte for EXP-007. Ignoring it protects it from being staged by accident
+# without touching the file itself.
+experiments/*/checkpoints/
+
+# Temporary local audit file
+project-tree.txt
