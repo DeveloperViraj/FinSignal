@@ -1,0 +1,1288 @@
+"""
+Risk engine — measured risk, with the method attached to every number.
+
+## Why every metric carries its method
+
+"VaR" is not a number, it is a family of numbers. Historical VaR at 95% and
+parametric VaR at 95% on the same series routinely differ by 30%, and the
+difference is entirely methodological. A risk panel that prints one figure
+labelled "VaR" is asserting a false precision, and the reader has no way to
+know which assumption they are inheriting.
+
+So every function here returns a `RiskMetric` carrying `method`, and the
+aggregate report keys them separately: `var_historical_95` and
+`var_parametric_95` are different fields, never averaged, never presented as one
+number. Where a method's assumption is known to be violated by the data — a
+Gaussian VaR on returns with excess kurtosis of 116, which this project has
+actually measured — the metric says so in `caveat`.
+
+## Scope
+
+Everything here is *descriptive*. It measures a return series or a weight
+vector; it does not forecast, allocate or score. `src/quant/portfolio/optimizer`
+consumes covariance estimates from here; nothing here consumes anything from
+there.
+
+## What is deliberately not implemented
+
+* **Monte Carlo VaR** — needs a return-generating process, and choosing one is a
+  modelling decision this project has no evidence to make.
+* **Factor risk decomposition beyond the six-factor attribution already in
+  `backtest/attribution.py`** — that module owns factor exposure; duplicating it
+  here would create two answers to the same question.
+"""
+
+from __future__ import annotations
+
+import logging
+import warnings
+import dataclasses
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Optional
+
+from src.quant.portfolio import psd
+from src.quant.risk import coherent
+from src.quant.portfolio.psd import NotPositiveSemiDefinite  # re-exported
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger("finsignal.quant.risk")
+
+#: Below this many observations a distributional statistic is not reported.
+#: A 95% VaR estimated from 30 points is the second-worst observation.
+MIN_OBSERVATIONS = 60
+
+#: Excess kurtosis above which a Gaussian assumption is flagged rather than
+#: silently used. EXP-005 measured 116.9 on one strategy's returns.
+KURTOSIS_WARNING = 3.0
+
+
+class SeriesUnit(str, Enum):
+    """What the input series actually measures.
+
+    This exists because it was wrong. The portfolio surface builds a book-level
+    outcome series in *cross-sectional rank* units — correctly, since the
+    project's primary target is a rank — and passed it to `analyse`, which
+    computed a "Sharpe ratio" from it. A Sharpe of a rank series is not a Sharpe:
+    the numerator is not a return, the denominator is not a volatility, and
+    annualising it by 252 asserts a period length the series does not have.
+
+    Metrics that presuppose returns now refuse on a non-return series rather
+    than producing a number that looks like a Sharpe and is not one.
+    """
+
+    RETURN = "return"      #: periodic returns, as decimal fractions
+    RANK = "rank"          #: cross-sectional rank, typically in [-1, 1]
+    OTHER = "other"        #: some other quantity; return semantics do not apply
+
+
+#: Metrics whose definition presupposes the input is a return series.
+#:
+#: Dispersion and drawdown-path measures are still meaningful on a rank series —
+#: a rank book has a dispersion and it has an underwater path — so they are not
+#: suppressed. These are the ones whose *name* would be a false claim.
+RETURN_ONLY_METRICS: frozenset[str] = frozenset({
+    "sharpe", "sortino", "calmar", "ulcer_performance_index",
+    "capm_alpha", "information_ratio",
+    # Both are defined against a threshold in return units; a rank has none.
+    "omega", "semi_variance",
+})
+
+
+class Unit(str, Enum):
+    """What a number is measured in.
+
+    Encoded as data rather than left to a label. Unit ambiguity is a standard
+    way financial systems produce wrong answers quietly: a ratio rendered with a
+    percent sign, a per-period figure read as annual, a magnitude read as a
+    signed return. A consumer that knows the unit cannot make those mistakes by
+    accident.
+    """
+
+    RATIO = "ratio"                #: dimensionless, e.g. Sharpe
+    RETURN = "return"              #: a return, as a decimal fraction
+    RETURN_MAGNITUDE = "return_magnitude"  #: a loss reported positive, e.g. VaR
+    ANNUALISED_RETURN = "annualised_return"
+    ANNUALISED_VOL = "annualised_volatility"
+    COUNT = "count"
+    PERIODS = "periods"
+
+
+class Annualisation(str, Enum):
+    """How, if at all, a per-period figure was scaled to a year."""
+
+    NONE = "none"                        #: reported per period as measured
+    SQRT_TIME = "sqrt_periods_per_year"  #: dispersion, scaled by sqrt(T)
+    LINEAR = "periods_per_year"          #: a mean, scaled by T
+    GEOMETRIC = "geometric_compounded"   #: a growth rate, compounded
+
+
+#: Methodology as structured metadata rather than prose.
+#:
+#: A method string alone ("mean_over_std_annualised") tells a reader what was
+#: done only if they already know the convention. These fields say it outright,
+#: which is what lets the UI render a number with the context that makes it
+#: falsifiable: what it is, in what unit, over what frequency, scaled how, from
+#: which input.
+@dataclass(frozen=True)
+class Methodology:
+    method: str
+    unit: Unit
+    annualisation: Annualisation = Annualisation.NONE
+    #: Observation frequency of the input series, when it is known.
+    frequency: Optional[str] = None
+    #: Periods-per-year used for any scaling. None when nothing was scaled.
+    periods_per_year: Optional[float] = None
+    #: What the number was computed from.
+    inputs: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "unit": self.unit.value,
+            "annualisation": self.annualisation.value,
+            "frequency": self.frequency,
+            "periods_per_year": self.periods_per_year,
+            "inputs": list(self.inputs),
+        }
+
+
+@dataclass(frozen=True)
+class RiskMetric:
+    """One number, its method, and what would invalidate it."""
+
+    name: str
+    value: Optional[float]
+    method: str
+    observations: int
+    caveat: Optional[str] = None
+    #: Structured methodology. Optional so existing constructors keep working;
+    #: `as_dict` falls back to the method string when it is absent.
+    methodology: Optional[Methodology] = None
+
+    def as_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "value": None if self.value is None else round(self.value, 6),
+            # Kept for compatibility: every existing consumer reads this.
+            "method": self.method,
+            "observations": self.observations,
+            "caveat": self.caveat,
+        }
+        if self.methodology is not None:
+            payload["methodology"] = self.methodology.as_dict()
+        return payload
+
+
+class UnorderedSeries(ValueError):
+    """Raised when a path-dependent metric is handed a non-chronological series."""
+
+
+def _clean(returns: pd.Series) -> pd.Series:
+    return pd.to_numeric(returns, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def _chronological(returns: pd.Series, metric: str) -> pd.Series:
+    """Clean, and refuse a date-indexed series that is not in date order.
+
+    Every drawdown-derived quantity is computed over ROW ORDER: `cumprod` and
+    `cummax` walk the series as given. On a date-indexed series that is not
+    sorted, the wealth path is wrong and so is everything read off it — and the
+    result is a different plausible number rather than an error.
+
+    Measured on a 200-observation sample, shuffling the rows moved maximum
+    drawdown from -0.0959 to -0.1185, the ulcer index from 0.0462 to 0.0509 and
+    Calmar from 1.75 to 1.42, while `drawdown_profile` happily reported a trough
+    date that meant nothing.
+
+    A positional index is left alone: there, row order *is* the intended order
+    and there is nothing to violate. Only a date-like index carries an
+    independent claim about sequence that the rows can contradict.
+
+    This mirrors `pit.calendar.require_chronological`, whose docstring makes the
+    argument this repository has already accepted: relying on every caller to
+    sort is the arrangement that produced the merge_asof defect.
+    """
+    series = _clean(returns)
+    index = series.index
+    date_like = isinstance(index, (pd.DatetimeIndex, pd.PeriodIndex)) or (
+        index.inferred_type in {"datetime", "datetime64", "date"}
+    )
+    if date_like and len(series) > 1 and not index.is_monotonic_increasing:
+        raise UnorderedSeries(
+            f"{metric} is path-dependent and its input is not in date order. "
+            "cumprod and cummax walk the series as given, so an unsorted series "
+            "produces a different, plausible, wrong answer. Sort by date first."
+        )
+    return series
+
+
+def _insufficient(name: str, method: str, n: int) -> RiskMetric:
+    return RiskMetric(
+        name=name, value=None, method=method, observations=n,
+        caveat=f"INSUFFICIENT DATA — {n} observations, {MIN_OBSERVATIONS} required",
+    )
+
+
+# ── dispersion ───────────────────────────────────────────────────────────────
+
+
+def volatility(returns: pd.Series, *, periods_per_year: float = 252.0) -> RiskMetric:
+    series = _clean(returns)
+    if len(series) < 2:
+        return _insufficient("volatility", "sample_std_annualised", len(series))
+    return RiskMetric(
+        "volatility", float(series.std(ddof=1) * np.sqrt(periods_per_year)),
+        "sample_std_annualised", len(series),
+    )
+
+
+def downside_deviation(
+    returns: pd.Series, *, threshold: float = 0.0, periods_per_year: float = 252.0
+) -> RiskMetric:
+    series = _clean(returns)
+    if len(series) < 2:
+        return _insufficient("downside_deviation", "below_threshold_rms", len(series))
+    shortfall = np.minimum(series - threshold, 0.0)
+    value = float(np.sqrt((shortfall ** 2).mean()) * np.sqrt(periods_per_year))
+    return RiskMetric(
+        "downside_deviation", value, f"below_threshold_rms(threshold={threshold})", len(series),
+    )
+
+
+def rolling_volatility(
+    returns: pd.Series, *, window: int = 63, periods_per_year: float = 252.0
+) -> pd.Series:
+    series = _clean(returns)
+    return series.rolling(window, min_periods=max(2, window // 2)).std(ddof=1) * np.sqrt(
+        periods_per_year
+    )
+
+
+# ── drawdown ─────────────────────────────────────────────────────────────────
+
+
+def max_drawdown(returns: pd.Series, *, compound: bool = True) -> RiskMetric:
+    """Worst peak-to-trough decline.
+
+    `compound=False` accumulates additively, which is correct when the series is
+    not a return — this repository's primary target is a cross-sectional rank,
+    and compounding it produced a +6,553% "equity curve" once already.
+    """
+    series = _chronological(returns, "max_drawdown")
+    if len(series) < 2:
+        return _insufficient("max_drawdown", "peak_to_trough", len(series))
+    path = (1.0 + series).cumprod() if compound else series.cumsum()
+    peak = path.cummax()
+    drawdown = (path / peak - 1.0) if compound else (path - peak)
+    return RiskMetric(
+        "max_drawdown", float(drawdown.min()),
+        "peak_to_trough_compound" if compound else "peak_to_trough_additive",
+        len(series),
+        caveat=None if compound else "additive accumulation — units are the input's, not %",
+    )
+
+
+def drawdown_series(returns: pd.Series, *, compound: bool = True) -> pd.Series:
+    series = _chronological(returns, "drawdown_series")
+    path = (1.0 + series).cumprod() if compound else series.cumsum()
+    peak = path.cummax()
+    return (path / peak - 1.0) if compound else (path - peak)
+
+
+# ── risk-adjusted performance ────────────────────────────────────────────────
+#
+# Every ratio here annualises EXACTLY ONCE, and each says how in its `method`.
+# Double annualisation is the classic silent error in this family: annualising a
+# per-period mean and then dividing by an already-annualised volatility inflates
+# a Sharpe by sqrt(periods_per_year), which is 15.9x on daily data. The tests
+# pin the arithmetic against hand-computed values for that reason.
+#
+# `risk_free` is a PER-PERIOD rate, matching the return series. Passing an
+# annual rate against daily returns is the other half of the same mistake, so
+# the parameter is named and documented rather than inferred.
+
+
+#: Relative tolerance below which a dispersion counts as zero.
+#:
+#: `sigma <= 0` is not enough. A series of 120 identical values has a sample
+#: standard deviation around 1e-19 rather than exactly zero, so the exact
+#: comparison passes and the ratio explodes — a constant series produced a
+#: Sharpe of 3.6e16, which would rank first in any leaderboard. The threshold is
+#: scaled by the magnitude of what is being divided, because a dispersion of
+#: 1e-19 is negligible against a mean of 0.001 and enormous against a mean of
+#: 1e-25.
+ZERO_DISPERSION_RTOL = 1e-12
+
+
+def _is_zero_dispersion(dispersion: float, scale: float) -> bool:
+    if not np.isfinite(dispersion) or dispersion <= 0:
+        return True
+    return dispersion <= ZERO_DISPERSION_RTOL * max(1.0, abs(scale))
+
+
+def _excess(series: pd.Series, risk_free: float) -> pd.Series:
+    return series - risk_free if risk_free else series
+
+
+def sharpe(
+    returns: pd.Series, *, periods_per_year: float = 252.0, risk_free: float = 0.0,
+) -> RiskMetric:
+    """Annualised excess return per unit of total volatility.
+
+    `risk_free` is per period, not annual. A zero-variance series returns None
+    rather than infinity: a constant series has no risk-adjusted return, and
+    reporting one as unbounded would rank it first in any leaderboard.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("sharpe", "mean_over_std_annualised", len(series))
+    excess = _excess(series, risk_free)
+    sigma = float(excess.std(ddof=1))
+    if _is_zero_dispersion(sigma, float(excess.mean())):
+        return RiskMetric(
+            "sharpe", None, "mean_over_std_annualised", len(series),
+            caveat="zero variance — a constant series has no risk-adjusted return",
+        )
+    value = float(excess.mean()) / sigma * float(np.sqrt(periods_per_year))
+    return RiskMetric("sharpe", value, "mean_over_std_annualised", len(series))
+
+
+def sortino(
+    returns: pd.Series, *, periods_per_year: float = 252.0, risk_free: float = 0.0,
+    threshold: float = 0.0,
+) -> RiskMetric:
+    """Sharpe's numerator over downside deviation only.
+
+    Penalises downside dispersion alone, so a series whose volatility is mostly
+    upside scores better than its Sharpe. Undefined when nothing falls below the
+    threshold — there is no downside to divide by, and returning infinity would
+    make an all-positive sample look infinitely good.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("sortino", "mean_over_downside_deviation_annualised", len(series))
+    excess = _excess(series, risk_free)
+    shortfall = np.minimum(series - threshold, 0.0)
+    downside = float(np.sqrt(np.mean(np.square(shortfall))))
+    if _is_zero_dispersion(downside, float(excess.mean())):
+        return RiskMetric(
+            "sortino", None, "mean_over_downside_deviation_annualised", len(series),
+            caveat=f"no observation below the {threshold:g} threshold — downside is undefined",
+        )
+    value = float(excess.mean()) / downside * float(np.sqrt(periods_per_year))
+    return RiskMetric("sortino", value, "mean_over_downside_deviation_annualised", len(series))
+
+
+def calmar(
+    returns: pd.Series, *, periods_per_year: float = 252.0, compound: bool = True,
+) -> RiskMetric:
+    """Annualised return over the magnitude of the worst drawdown.
+
+    Uses the geometric annualised return when compounding, because Calmar
+    compares a growth rate against a peak-to-trough decline and an arithmetic
+    mean is not that rate.
+    """
+    series = _chronological(returns, "calmar")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("calmar", "annualised_return_over_max_drawdown", len(series))
+    worst = max_drawdown(series, compound=compound).value
+    if worst is None or worst >= 0:
+        return RiskMetric(
+            "calmar", None, "annualised_return_over_max_drawdown", len(series),
+            caveat="no drawdown in the sample — the ratio has no denominator",
+        )
+    if compound:
+        growth = float((1.0 + series).prod())
+        if growth <= 0:
+            return RiskMetric(
+                "calmar", None, "annualised_return_over_max_drawdown", len(series),
+                caveat="cumulative wealth reached zero — no geometric rate exists",
+            )
+        annualised = growth ** (periods_per_year / len(series)) - 1.0
+    else:
+        annualised = float(series.mean()) * periods_per_year
+    return RiskMetric(
+        "calmar", annualised / abs(worst),
+        "annualised_return_over_max_drawdown", len(series),
+    )
+
+
+def tracking_error(
+    returns: pd.Series, benchmark: pd.Series, *, periods_per_year: float = 252.0,
+) -> RiskMetric:
+    """Annualised volatility of the active return.
+
+    Aligned on the index before differencing. Subtracting two series of
+    different lengths positionally is how a benchmark comparison silently
+    becomes a comparison of unrelated dates.
+    """
+    joined = pd.concat([_clean(returns), _clean(benchmark)], axis=1, join="inner").dropna()
+    if len(joined) < MIN_OBSERVATIONS:
+        return _insufficient("tracking_error", "active_return_std_annualised", len(joined))
+    active = joined.iloc[:, 0] - joined.iloc[:, 1]
+    return RiskMetric(
+        "tracking_error", float(active.std(ddof=1) * np.sqrt(periods_per_year)),
+        "active_return_std_annualised", len(joined),
+    )
+
+
+def information_ratio(
+    returns: pd.Series, benchmark: pd.Series, *, periods_per_year: float = 252.0,
+) -> RiskMetric:
+    """Annualised active return per unit of tracking error."""
+    joined = pd.concat([_clean(returns), _clean(benchmark)], axis=1, join="inner").dropna()
+    if len(joined) < MIN_OBSERVATIONS:
+        return _insufficient("information_ratio", "active_mean_over_tracking_error", len(joined))
+    active = joined.iloc[:, 0] - joined.iloc[:, 1]
+    sigma = float(active.std(ddof=1))
+    if _is_zero_dispersion(sigma, float(active.mean())):
+        return RiskMetric(
+            "information_ratio", None, "active_mean_over_tracking_error", len(joined),
+            caveat="active return has zero variance — the portfolio tracks exactly",
+        )
+    return RiskMetric(
+        "information_ratio", float(active.mean()) / sigma * float(np.sqrt(periods_per_year)),
+        "active_mean_over_tracking_error", len(joined),
+    )
+
+
+def capm_alpha(
+    returns: pd.Series, benchmark: pd.Series, *, periods_per_year: float = 252.0,
+    risk_free: float = 0.0,
+) -> RiskMetric:
+    """Annualised CAPM intercept — the part beta does not explain.
+
+    A single-factor regression against one benchmark. Named `capm_alpha` rather
+    than `alpha` because this repository already reports a six-factor alpha for
+    research, and the two are different claims: clearing one says nothing about
+    the other. The caveat says so on every result.
+    """
+    joined = pd.concat([_clean(returns), _clean(benchmark)], axis=1, join="inner").dropna()
+    if len(joined) < MIN_OBSERVATIONS:
+        return _insufficient("capm_alpha", "single_factor_ols_annualised", len(joined))
+    portfolio = joined.iloc[:, 0] - risk_free
+    market = joined.iloc[:, 1] - risk_free
+    variance = float(market.var(ddof=1))
+    if _is_zero_dispersion(variance, float(market.mean() ** 2)):
+        return RiskMetric(
+            "capm_alpha", None, "single_factor_ols_annualised", len(joined),
+            caveat="benchmark has zero variance — beta is undefined",
+        )
+    slope = float(portfolio.cov(market)) / variance
+    intercept = float(portfolio.mean()) - slope * float(market.mean())
+    return RiskMetric(
+        "capm_alpha", intercept * periods_per_year,
+        "single_factor_ols_annualised", len(joined),
+        caveat=(
+            "single-factor against one benchmark. Not the six-factor alpha the "
+            "research surfaces report; clearing one implies nothing about the other."
+        ),
+    )
+
+
+def drawdown_profile(returns: pd.Series, *, compound: bool = True) -> dict[str, Any]:
+    """How long the worst decline lasted, and whether it recovered.
+
+    Depth alone hides duration, and duration is what a drawdown actually costs.
+    `recovered` is False when the series ends still underwater, in which case
+    `recovery_periods` is None rather than the length of the sample — an
+    unrecovered drawdown has no recovery time, and reporting one would be a
+    measurement of when we stopped looking.
+    """
+    series = _chronological(returns, "drawdown_profile")
+    if len(series) < MIN_OBSERVATIONS:
+        return {"observations": len(series), "max_drawdown": None,
+                "peak_index": None, "trough_index": None,
+                "drawdown_periods": None, "recovery_periods": None,
+                "recovered": None, "method": "peak_to_trough",
+                "caveat": f"INSUFFICIENT DATA — {len(series)} observations"}
+
+    drawdown = drawdown_series(series, compound=compound)
+    trough_pos = int(np.argmin(drawdown.to_numpy()))
+    path = (1.0 + series).cumprod() if compound else series.cumsum()
+    peak_pos = int(np.argmax(path.to_numpy()[: trough_pos + 1])) if trough_pos > 0 else 0
+
+    after = drawdown.to_numpy()[trough_pos:]
+    recovered_offset = next((i for i, v in enumerate(after) if v >= -1e-12), None)
+    return {
+        "observations": len(series),
+        "max_drawdown": round(float(drawdown.min()), 6),
+        "peak_index": str(series.index[peak_pos]),
+        "trough_index": str(series.index[trough_pos]),
+        "drawdown_periods": trough_pos - peak_pos,
+        "recovery_periods": None if recovered_offset is None else int(recovered_offset),
+        "recovered": recovered_offset is not None,
+        "method": "peak_to_trough_compound" if compound else "peak_to_trough_additive",
+        "caveat": None if recovered_offset is not None
+        else "still underwater at the end of the sample — recovery time is unknown",
+    }
+
+
+def distribution(returns: pd.Series) -> dict[str, Any]:
+    """Shape of the return distribution.
+
+    Reported because every Gaussian metric above depends on it. EXP-007's
+    selected configuration has skew 3.61 and excess kurtosis 43.28, which is
+    why its parametric VaR and its deflated Sharpe disagree so sharply with the
+    historical figures.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return {"observations": len(series), "mean": None, "median": None,
+                "std": None, "skew": None, "excess_kurtosis": None,
+                "gaussian_reasonable": None,
+                "caveat": f"INSUFFICIENT DATA — {len(series)} observations"}
+    excess_kurtosis = float(series.kurtosis())      # pandas reports EXCESS already
+    return {
+        "observations": len(series),
+        "mean": round(float(series.mean()), 8),
+        "median": round(float(series.median()), 8),
+        "std": round(float(series.std(ddof=1)), 8),
+        "skew": round(float(series.skew()), 4),
+        "excess_kurtosis": round(excess_kurtosis, 4),
+        "gaussian_reasonable": bool(abs(excess_kurtosis) <= KURTOSIS_WARNING),
+        "caveat": None if abs(excess_kurtosis) <= KURTOSIS_WARNING else (
+            f"excess kurtosis {excess_kurtosis:.1f} — fat tails. Parametric VaR "
+            "and any Gaussian assumption understate the tail."
+        ),
+    }
+
+
+# ── drawdown-based risk ──────────────────────────────────────────────────────
+#
+# `max_drawdown` reports depth and nothing else, so a single catastrophic day
+# and a two-year grind to the same trough score identically. These measure the
+# drawdown *path*, which is what an investor actually sits through.
+#
+# The family mirrors the tail family deliberately: DaR is the drawdown analogue
+# of VaR, CDaR of CVaR. Same quantile logic, applied to the underwater series
+# instead of the return series.
+
+
+def average_drawdown(returns: pd.Series, *, compound: bool = True) -> RiskMetric:
+    """Mean depth across the whole path, including periods at a high-water mark.
+
+    Zeros are included on purpose. Averaging only the underwater periods answers
+    "how bad was it while it was bad", which is a different question and reads
+    far worse for a strategy that is usually at its peak.
+    """
+    series = _chronological(returns, "average_drawdown")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("average_drawdown", "mean_of_drawdown_path", len(series))
+    path = drawdown_series(series, compound=compound)
+    return RiskMetric(
+        "average_drawdown", float(path.mean()),
+        "mean_of_drawdown_path_including_zeros", len(series),
+    )
+
+
+def ulcer_index(returns: pd.Series, *, compound: bool = True) -> RiskMetric:
+    """Root mean square of the drawdown path.
+
+    Penalises depth and duration together — squaring makes a deep drawdown count
+    disproportionately, and averaging over the whole path makes a long one count
+    at all. Two strategies with the same maximum drawdown separate here, which
+    is the point.
+    """
+    series = _chronological(returns, "ulcer_index")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("ulcer_index", "rms_of_drawdown_path", len(series))
+    path = drawdown_series(series, compound=compound)
+    return RiskMetric(
+        "ulcer_index", float(np.sqrt(np.mean(np.square(path.to_numpy())))),
+        "rms_of_drawdown_path", len(series),
+    )
+
+
+def drawdown_at_risk(
+    returns: pd.Series, *, confidence: float = 0.95, compound: bool = True,
+) -> RiskMetric:
+    """The drawdown analogue of VaR: the depth exceeded (1-confidence) of the time.
+
+    Reported as a positive magnitude, matching `var_historical`, so the tail
+    family reads consistently. Empirical quantile — no distribution assumed.
+    """
+    series = _chronological(returns, "drawdown_at_risk")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("drawdown_at_risk", f"empirical_quantile_{confidence:.0%}", len(series))
+    path = drawdown_series(series, compound=compound)
+    return RiskMetric(
+        "drawdown_at_risk", float(-np.quantile(path.to_numpy(), 1.0 - confidence)),
+        f"empirical_drawdown_quantile_{confidence:.0%}", len(series),
+    )
+
+
+def conditional_drawdown_at_risk(
+    returns: pd.Series, *, confidence: float = 0.95, compound: bool = True,
+) -> RiskMetric:
+    """Mean depth of the worst (1-confidence) share of the drawdown path — CDaR.
+
+    Stands to DaR as CVaR stands to VaR: it reports the average of the tail
+    rather than its boundary, so a path with a few very deep excursions is
+    distinguishable from one that merely crosses the threshold often.
+    """
+    series = _chronological(returns, "conditional_drawdown_at_risk")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("conditional_drawdown_at_risk",
+                             f"empirical_es_{confidence:.0%}", len(series))
+    path = drawdown_series(series, compound=compound).to_numpy()
+    threshold = np.quantile(path, 1.0 - confidence)
+    tail = path[path <= threshold]
+    if tail.size == 0:
+        tail = np.array([threshold])
+    return RiskMetric(
+        "conditional_drawdown_at_risk", float(-tail.mean()),
+        f"empirical_drawdown_es_{confidence:.0%}", len(series),
+    )
+
+
+def ulcer_performance_index(
+    returns: pd.Series, *, periods_per_year: float = 252.0, risk_free: float = 0.0,
+    compound: bool = True,
+) -> RiskMetric:
+    """Annualised excess return per unit of ulcer — the Martin ratio.
+
+    A Sharpe that treats drawdown depth-and-duration as the risk rather than
+    volatility. Useful precisely when returns are fat-tailed, since it never
+    touches a standard deviation.
+    """
+    series = _chronological(returns, "ulcer_performance_index")
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("ulcer_performance_index",
+                             "excess_return_over_ulcer_annualised", len(series))
+    ulcer = ulcer_index(series, compound=compound).value
+    if ulcer is None or _is_zero_dispersion(ulcer, 1.0):
+        return RiskMetric(
+            "ulcer_performance_index", None,
+            "excess_return_over_ulcer_annualised", len(series),
+            caveat="no drawdown in the sample — the ratio has no denominator",
+        )
+    excess = _excess(series, risk_free)
+    return RiskMetric(
+        "ulcer_performance_index",
+        float(excess.mean()) * periods_per_year / ulcer,
+        "excess_return_over_ulcer_annualised", len(series),
+    )
+
+
+# ── robust dispersion ────────────────────────────────────────────────────────
+#
+# Standard deviation squares every deviation, so one outlier can dominate it.
+# On this project's own data that is not hypothetical: EXP-007's selected
+# configuration has excess kurtosis of 43.28. These measures are far less
+# sensitive to that, and reporting them beside the standard ones shows how much
+# of the risk figure is coming from a handful of periods.
+
+
+def mean_absolute_deviation(returns: pd.Series) -> RiskMetric:
+    """Mean absolute deviation from the mean.
+
+    Linear in the deviations rather than quadratic, so a single extreme period
+    moves it far less than it moves a standard deviation. A large gap between
+    the two is itself the finding.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("mean_absolute_deviation", "mean_abs_deviation_from_mean", len(series))
+    values = series.to_numpy()
+    return RiskMetric(
+        "mean_absolute_deviation", float(np.mean(np.abs(values - values.mean()))),
+        "mean_abs_deviation_from_mean", len(series),
+    )
+
+
+def worst_realization(returns: pd.Series) -> RiskMetric:
+    """The single worst period, as a positive magnitude.
+
+    No estimation and no assumption — it is an observation. Reported because
+    every parametric tail measure should be readable against the worst thing
+    that actually happened.
+    """
+    series = _clean(returns)
+    if len(series) < 1:
+        return _insufficient("worst_realization", "sample_minimum", len(series))
+    return RiskMetric(
+        "worst_realization", float(-series.min()), "sample_minimum", len(series),
+    )
+
+
+# ── tail ─────────────────────────────────────────────────────────────────────
+
+
+def var_historical(returns: pd.Series, *, confidence: float = 0.95) -> RiskMetric:
+    """Empirical quantile. Makes no distributional assumption.
+
+    Bounded below by the worst observation, which is its honest limitation: it
+    cannot describe a loss larger than one already seen.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("var_historical", f"empirical_quantile_{confidence:.0%}", len(series))
+    value = float(np.quantile(series, 1.0 - confidence))
+    return RiskMetric(
+        "var_historical", abs(value), f"empirical_quantile_{confidence:.0%}", len(series),
+        caveat="Cannot exceed the worst observed loss; silent about unseen tails.",
+    )
+
+
+def var_parametric(returns: pd.Series, *, confidence: float = 0.95) -> RiskMetric:
+    """Gaussian VaR: μ − zσ.
+
+    Flags itself when the sample is visibly non-Gaussian, because that is
+    exactly when it understates risk and exactly when it looks reassuring.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("var_parametric", f"gaussian_{confidence:.0%}", len(series))
+
+    from scipy import stats
+
+    z = float(stats.norm.ppf(1.0 - confidence))
+    value = float(series.mean() + z * series.std(ddof=1))
+    excess_kurtosis = float(stats.kurtosis(series, fisher=True))
+    caveat = (
+        f"Gaussian assumption; sample excess kurtosis {excess_kurtosis:.1f} "
+        "exceeds the flagging threshold, so this UNDERSTATES tail risk."
+        if excess_kurtosis > KURTOSIS_WARNING
+        else "Assumes normality."
+    )
+    return RiskMetric(
+        "var_parametric", abs(value), f"gaussian_{confidence:.0%}", len(series), caveat=caveat,
+    )
+
+
+def cvar_historical(returns: pd.Series, *, confidence: float = 0.95) -> RiskMetric:
+    """Mean loss beyond the empirical VaR. Expected shortfall."""
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("cvar_historical", f"empirical_es_{confidence:.0%}", len(series))
+    cutoff = float(np.quantile(series, 1.0 - confidence))
+    tail = series[series <= cutoff]
+    if tail.empty:
+        return _insufficient("cvar_historical", f"empirical_es_{confidence:.0%}", len(series))
+    return RiskMetric(
+        "cvar_historical", abs(float(tail.mean())), f"empirical_es_{confidence:.0%}", len(series),
+        caveat=f"Averaged over {len(tail)} tail observations.",
+    )
+
+
+def entropic_var(returns: pd.Series, *, confidence: float = 0.95) -> RiskMetric:
+    """EVaR: the tightest Chernoff bound on VaR, and coherent where VaR is not.
+
+    Sits above CVaR by construction, so the pair brackets the tail rather than
+    describing it with a single average. Reported as a positive magnitude, like
+    the other tail measures here.
+    """
+    series = _clean(returns)
+    method = f"entropic_var_{confidence:.0%}"
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("entropic_var", method, len(series))
+    value = coherent.entropic_value_at_risk(series, confidence=confidence)
+    if value is None:
+        return RiskMetric("entropic_var", None, method, len(series),
+                          caveat="the entropic bound did not converge")
+    return RiskMetric(
+        "entropic_var", abs(value), method, len(series),
+        caveat="Upper bound on VaR; always at or above CVaR at the same level.",
+    )
+
+
+def entropic_drawdown_risk(
+    returns: pd.Series, *, confidence: float = 0.95, compound: bool = True
+) -> RiskMetric:
+    """EDaR: the entropic bound applied to the drawdown path."""
+    series = _chronological(returns, "entropic_drawdown_risk")
+    method = f"entropic_drawdown_{confidence:.0%}"
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("entropic_drawdown_risk", method, len(series))
+    path = drawdown_series(series, compound=compound)
+    value = coherent.entropic_drawdown_at_risk(path, confidence=confidence)
+    if value is None:
+        return RiskMetric("entropic_drawdown_risk", None, method, len(series),
+                          caveat="the entropic bound did not converge")
+    return RiskMetric("entropic_drawdown_risk", abs(value), method, len(series))
+
+
+def gini_dispersion(returns: pd.Series) -> RiskMetric:
+    """Expected absolute gap between two independent draws.
+
+    Assumes no distributional shape, unlike the standard deviation beside it.
+    """
+    series = _clean(returns)
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("gini_dispersion", "gini_mean_difference", len(series))
+    value = coherent.gini_mean_difference(series)
+    if value is None:
+        return _insufficient("gini_dispersion", "gini_mean_difference", len(series))
+    return RiskMetric("gini_dispersion", value, "gini_mean_difference", len(series))
+
+
+def omega(returns: pd.Series, *, threshold: float = 0.0) -> RiskMetric:
+    """Probability-weighted gains over losses about a threshold."""
+    series = _clean(returns)
+    method = f"omega_at_{threshold:g}"
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("omega", method, len(series))
+    value = coherent.omega_ratio(series, threshold=threshold)
+    if value is None:
+        return RiskMetric(
+            "omega", None, method, len(series),
+            caveat="no observation fell below the threshold, so the ratio is unbounded",
+        )
+    return RiskMetric("omega", value, method, len(series))
+
+
+def semi_variance(returns: pd.Series, *, threshold: float = 0.0) -> RiskMetric:
+    """Second lower partial moment about an explicit threshold."""
+    series = _clean(returns)
+    method = f"lower_partial_moment_2_at_{threshold:g}"
+    if len(series) < MIN_OBSERVATIONS:
+        return _insufficient("semi_variance", method, len(series))
+    value = coherent.lower_partial_moment(series, threshold=threshold, order=2)
+    if value is None:
+        return _insufficient("semi_variance", method, len(series))
+    return RiskMetric("semi_variance", value, method, len(series))
+
+
+# ── relative ─────────────────────────────────────────────────────────────────
+
+
+def beta(returns: pd.Series, benchmark: pd.Series) -> RiskMetric:
+    joined = pd.concat([_clean(returns), _clean(benchmark)], axis=1, join="inner").dropna()
+    joined.columns = ["r", "b"]
+    if len(joined) < MIN_OBSERVATIONS:
+        return _insufficient("beta", "ols_slope", len(joined))
+    variance = float(joined["b"].var(ddof=1))
+    if variance <= 0:
+        return RiskMetric("beta", None, "ols_slope", len(joined),
+                          caveat="benchmark has zero variance")
+    value = float(joined.cov().loc["r", "b"] / variance)
+    return RiskMetric("beta", value, "ols_slope", len(joined))
+
+
+def correlation(returns: pd.DataFrame, *, method: str = "pearson") -> pd.DataFrame:
+    return returns.corr(method=method)
+
+
+def covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
+    from src.quant.portfolio.optimizer import covariance
+
+    return covariance(returns)
+
+
+# ── risk attribution ─────────────────────────────────────────────────────────
+
+
+#: Gross weight that must be covered by the covariance matrix before the risk
+#: decomposition may be read as describing the book. Below it the numbers
+#: describe a subset and say so.
+MIN_RISK_COVERAGE = 0.99
+
+
+def _annotate_coverage(
+    frame: pd.DataFrame, coverage: float, missing: list[Any],
+) -> pd.DataFrame:
+    """Attach coverage to a contributions frame without changing its columns."""
+    frame.attrs["weight_coverage"] = round(coverage, 6)
+    frame.attrs["uncovered_symbols"] = [str(m) for m in missing]
+    frame.attrs["complete"] = coverage >= MIN_RISK_COVERAGE and not missing
+    frame.attrs["caveat"] = None if frame.attrs["complete"] else (
+        f"INCOMPLETE — the covariance matrix covers {coverage:.1%} of gross "
+        f"weight. {len(missing)} position(s) have no covariance row and were "
+        "excluded, so portfolio volatility and every contribution below describe "
+        "a subset of the book and understate its risk."
+    )
+    return frame
+
+
+def _contributions_frame(
+    aligned: pd.Series, marginal: float, component: float, share: float,
+    coverage: float, missing: list[Any],
+) -> pd.DataFrame:
+    frame = pd.DataFrame({
+        "weight": aligned, "marginal": marginal,
+        "component": component, "share": share,
+    })
+    return _annotate_coverage(frame, coverage, missing)
+
+
+def _unavailable_contributions(
+    aligned: pd.Series, coverage: float, missing: list[Any],
+) -> pd.DataFrame:
+    """A contributions table that could not be computed.
+
+    NaN rather than 0.0, because every consumer of this frame — a sum, a sort,
+    a share, a chart — treats zero as a measurement and NaN as an absence.
+    The weights are kept: they are what the book holds, and that much is
+    known. What is unknown is what they contribute.
+    """
+    frame = pd.DataFrame({
+        "weight": aligned,
+        "marginal": float("nan"),
+        "component": float("nan"),
+        "share": float("nan"),
+    })
+    frame = _annotate_coverage(frame, coverage, missing)
+    frame.attrs["computation"] = "failed"
+    frame.attrs["complete"] = False
+    frame.attrs["caveat"] = (
+        "UNAVAILABLE — the marginal risk calculation produced a non-finite "
+        "result, so no contribution could be computed. This is a failure to "
+        "measure the book's risk, not a finding that it has none."
+    )
+    return frame
+
+
+def risk_contributions(weights: pd.Series, cov: pd.DataFrame) -> pd.DataFrame:
+    """Marginal and component contribution to portfolio risk.
+
+    Component contributions sum to total portfolio volatility by construction —
+    that identity is asserted, because a contribution table that does not add up
+    is the usual symptom of a misaligned index.
+    """
+    # Coverage first.
+    #
+    # `reindex(...).fillna(0.0)` silently drops any held position the covariance
+    # matrix does not cover — a new listing, a name with too little history, a
+    # data gap. Portfolio volatility is then computed on a subset of the book,
+    # the component contributions still sum to that subset's volatility so the
+    # identity assertion below passes, and `share` still totals 1.0. The result
+    # is a plausible, internally consistent, UNDERSTATED risk number with
+    # nothing to indicate a position went missing — the flattering direction.
+    #
+    # The weights are still zero-filled, because the arithmetic needs a value.
+    # What changes is that the omission is measured and attached, and the caller
+    # is told rather than left to assume the book was fully covered.
+    requested = pd.to_numeric(weights, errors="coerce").dropna()
+    covered = requested.reindex(cov.index).dropna()
+    gross = float(requested.abs().sum())
+    weight_coverage = float(covered.abs().sum() / gross) if gross > 0 else 0.0
+    missing = sorted(set(requested.index) - set(cov.index))
+
+    aligned = weights.reindex(cov.index).fillna(0.0)
+    matrix = cov.to_numpy()
+    # numpy 2.2 on Accelerate emits spurious divide/overflow/invalid warnings for
+    # matmul on well-formed input. They are suppressed narrowly and the result is
+    # checked for finiteness instead — the same pattern `models/base.py` uses,
+    # because a warning nobody can act on trains people to ignore warnings.
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        portfolio_vol = psd.volatility(
+            aligned.to_numpy(), matrix, context="risk contributions"
+        )
+        # A genuinely riskless or empty book. Zero here is the true answer.
+        if portfolio_vol <= 0:
+            return _contributions_frame(
+                aligned, 0.0, 0.0, 0.0, weight_coverage, missing)
+        marginal_values = matrix @ aligned.to_numpy() / portfolio_vol
+
+    if not np.all(np.isfinite(marginal_values)):
+        # Not zero. A non-finite marginal means the covariance solve failed —
+        # a singular matrix, an overflow, a degenerate book — and returning
+        # zeros there published a portfolio with no risk in it, which is the
+        # most flattering possible reading of a numerical failure and
+        # indistinguishable from a genuinely riskless book. The branch above
+        # handles that case, where zero is the true answer; this one is a
+        # failure to compute and says so.
+        return _unavailable_contributions(aligned, weight_coverage, missing)
+    marginal = pd.Series(marginal_values, index=cov.index)
+    component = aligned * marginal
+    total = float(component.sum())
+    assert abs(total - portfolio_vol) < 1e-8 * max(1.0, portfolio_vol), (
+        "component contributions must sum to portfolio volatility; "
+        f"got {total} vs {portfolio_vol}"
+    )
+    frame = pd.DataFrame({
+        "weight": aligned,
+        "marginal": marginal,
+        "component": component,
+        "share": component / portfolio_vol,
+    }).sort_values("component", ascending=False)
+    return _annotate_coverage(frame, weight_coverage, missing)
+
+
+def concentration(weights: pd.Series) -> dict[str, Any]:
+    """Herfindahl, effective names, and the top-N shares."""
+    w = weights.abs()
+    gross = float(w.sum())
+    if gross <= 0:
+        return {"herfindahl": None, "effective_names": 0.0, "top_1": None,
+                "top_5": None, "top_10": None, "names": 0}
+    share = (w / gross).sort_values(ascending=False)
+    herfindahl = float((share ** 2).sum())
+    return {
+        "herfindahl": round(herfindahl, 6),
+        "effective_names": round(1.0 / max(herfindahl, 1e-12), 2),
+        "top_1": round(float(share.iloc[:1].sum()), 6),
+        "top_5": round(float(share.iloc[:5].sum()), 6),
+        "top_10": round(float(share.iloc[:10].sum()), 6),
+        "names": int((w > 1e-12).sum()),
+        "method": "inverse_herfindahl_on_gross_weights",
+    }
+
+
+def exposure(weights: pd.Series) -> dict[str, Any]:
+    w = weights.dropna()
+    longs = float(w[w > 0].sum())
+    shorts = float(w[w < 0].sum())
+    return {
+        "gross": round(float(w.abs().sum()), 6),
+        "net": round(float(w.sum()), 6),
+        "long": round(longs, 6),
+        "short": round(shorts, 6),
+        "long_names": int((w > 0).sum()),
+        "short_names": int((w < 0).sum()),
+    }
+
+
+def turnover(current: pd.Series, prior: Optional[pd.Series]) -> dict[str, Any]:
+    if prior is None or prior.empty:
+        return {"one_way": round(float(current.abs().sum()), 6), "method": "initial_build"}
+    index = current.index.union(prior.index)
+    delta = (current.reindex(index).fillna(0.0) - prior.reindex(index).fillna(0.0)).abs()
+    return {
+        "one_way": round(float(delta.sum()), 6),
+        "names_traded": int((delta > 1e-12).sum()),
+        "method": "sum_absolute_weight_change",
+    }
+
+
+# ── report ───────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class RiskReport:
+    metrics: dict[str, RiskMetric] = field(default_factory=dict)
+    tables: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "metrics": {k: v.as_dict() for k, v in self.metrics.items()},
+            **self.tables,
+            "note": (
+                "Every metric carries its method. Historical and parametric "
+                "figures are reported separately and are never averaged — they "
+                "answer the same question under different assumptions."
+            ),
+        }
+
+
+#: Structured methodology per metric, in one place.
+#:
+#: Declared here rather than at each of the two dozen call sites: a single table
+#: is the thing that can be reviewed for consistency, and it cannot drift from
+#: itself. `analyse` attaches these on the way out, so every served metric
+#: carries its unit, its annualisation convention and its inputs.
+_R = Unit.RATIO
+_RET = Unit.RETURN
+_MAG = Unit.RETURN_MAGNITUDE
+_AVOL = Unit.ANNUALISED_VOL
+_NONE, _SQRT, _LIN, _GEO = (
+    Annualisation.NONE, Annualisation.SQRT_TIME,
+    Annualisation.LINEAR, Annualisation.GEOMETRIC,
+)
+_SERIES = ("portfolio_return_series",)
+_VS_BENCH = ("portfolio_return_series", "benchmark_return_series")
+
+METHODOLOGY: dict[str, tuple[Unit, Annualisation, tuple[str, ...]]] = {
+    # dispersion
+    "volatility": (_AVOL, _SQRT, _SERIES),
+    "downside_deviation": (_AVOL, _SQRT, _SERIES),
+    "mean_absolute_deviation": (_RET, _NONE, _SERIES),
+    # risk-adjusted performance
+    "sharpe": (_R, _SQRT, _SERIES),
+    "sortino": (_R, _SQRT, _SERIES),
+    "calmar": (_R, _GEO, _SERIES),
+    "ulcer_performance_index": (_R, _LIN, _SERIES),
+    # drawdown. Signed: a drawdown is negative and is reported that way.
+    "max_drawdown": (_RET, _NONE, _SERIES),
+    "average_drawdown": (_RET, _NONE, _SERIES),
+    # magnitudes: reported positive, so a consumer never renders "-VaR".
+    "ulcer_index": (_MAG, _NONE, _SERIES),
+    "entropic_var_95": (_MAG, _NONE, _SERIES),
+    "entropic_drawdown_risk_95": (_MAG, _NONE, _SERIES),
+    "gini_dispersion": (_RET, _NONE, _SERIES),
+    "semi_variance": (_RET, _NONE, _SERIES),
+    "omega": (_R, _NONE, _SERIES),
+    "drawdown_at_risk_95": (_MAG, _NONE, _SERIES),
+    "conditional_drawdown_at_risk_95": (_MAG, _NONE, _SERIES),
+    "worst_realization": (_MAG, _NONE, _SERIES),
+    "var_historical_95": (_MAG, _NONE, _SERIES),
+    "var_parametric_95": (_MAG, _NONE, _SERIES),
+    "cvar_historical_95": (_MAG, _NONE, _SERIES),
+    "var_historical_99": (_MAG, _NONE, _SERIES),
+    "cvar_historical_99": (_MAG, _NONE, _SERIES),
+    # benchmark-relative
+    "beta": (_R, _NONE, _VS_BENCH),
+    "tracking_error": (_AVOL, _SQRT, _VS_BENCH),
+    "information_ratio": (_R, _SQRT, _VS_BENCH),
+    "capm_alpha": (Unit.ANNUALISED_RETURN, _LIN, _VS_BENCH),
+}
+
+
+def _suppress_inapplicable(
+    metrics: dict[str, RiskMetric], series_unit: SeriesUnit,
+) -> dict[str, RiskMetric]:
+    """Blank the metrics whose definition the input does not support.
+
+    The value is cleared and the reason is stated. Returning None with an
+    explanation is the honest outcome; returning the arithmetic under a name
+    that means something else is not.
+    """
+    if series_unit is SeriesUnit.RETURN:
+        return metrics
+    out: dict[str, RiskMetric] = {}
+    for name, metric in metrics.items():
+        if name in RETURN_ONLY_METRICS:
+            out[name] = dataclasses.replace(
+                metric, value=None,
+                caveat=(
+                    f"NOT APPLICABLE — the input is a {series_unit.value} series, "
+                    f"not returns. {name} presupposes a return series; computing it "
+                    "here would produce a number under a name that means something else."
+                ),
+            )
+        else:
+            out[name] = metric
+    return out
+
+
+def _with_methodology(
+    metrics: dict[str, RiskMetric], *, periods_per_year: float, frequency: Optional[str],
+) -> dict[str, RiskMetric]:
+    """Attach structured methodology to every metric that has an entry."""
+    out: dict[str, RiskMetric] = {}
+    for name, metric in metrics.items():
+        spec = METHODOLOGY.get(name)
+        if spec is None:
+            out[name] = metric
+            continue
+        unit, annualisation, inputs = spec
+        out[name] = dataclasses.replace(metric, methodology=Methodology(
+            method=metric.method,
+            unit=unit,
+            annualisation=annualisation,
+            frequency=frequency,
+            # None when nothing was scaled, so the field is never a decoration.
+            periods_per_year=None if annualisation is Annualisation.NONE else periods_per_year,
+            inputs=inputs,
+        ))
+    return out
+
+
+def analyse(
+    returns: pd.Series,
+    *,
+    weights: Optional[pd.Series] = None,
+    panel: Optional[pd.DataFrame] = None,
+    benchmark: Optional[pd.Series] = None,
+    prior_weights: Optional[pd.Series] = None,
+    periods_per_year: float = 252.0,
+    compound: bool = True,
+    risk_free: float = 0.0,
+    frequency: Optional[str] = None,
+    series_unit: SeriesUnit = SeriesUnit.RETURN,
+) -> RiskReport:
+    """The full report for one strategy's return series and current book.
+
+    `risk_free` is a PER-PERIOD rate, matching the return series. An annual rate
+    against daily returns is a common and silent error, so the unit is stated
+    here as well as on each function.
+    """
+    report = RiskReport()
+    report.metrics = {
+        # dispersion
+        "volatility": volatility(returns, periods_per_year=periods_per_year),
+        "downside_deviation": downside_deviation(returns, periods_per_year=periods_per_year),
+        # risk-adjusted performance
+        "sharpe": sharpe(returns, periods_per_year=periods_per_year, risk_free=risk_free),
+        "sortino": sortino(returns, periods_per_year=periods_per_year, risk_free=risk_free),
+        "calmar": calmar(returns, periods_per_year=periods_per_year, compound=compound),
+        "ulcer_performance_index": ulcer_performance_index(
+            returns, periods_per_year=periods_per_year, risk_free=risk_free,
+            compound=compound),
+        # drawdown. Depth alone cannot separate a brief plunge from a long
+        # grind to the same trough; the path measures do.
+        "max_drawdown": max_drawdown(returns, compound=compound),
+        "average_drawdown": average_drawdown(returns, compound=compound),
+        "ulcer_index": ulcer_index(returns, compound=compound),
+        "drawdown_at_risk_95": drawdown_at_risk(returns, confidence=0.95, compound=compound),
+        "conditional_drawdown_at_risk_95": conditional_drawdown_at_risk(
+            returns, confidence=0.95, compound=compound),
+        # robust dispersion. Reported beside the standard deviation because a
+        # large gap between them says how much of the risk figure comes from a
+        # handful of periods.
+        "mean_absolute_deviation": mean_absolute_deviation(returns),
+        "worst_realization": worst_realization(returns),
+        # tail. Historical and parametric are kept as separate fields and are
+        # never averaged: they answer the same question with different
+        # assumptions, and a blend of the two means nothing.
+        "var_historical_95": var_historical(returns, confidence=0.95),
+        "var_parametric_95": var_parametric(returns, confidence=0.95),
+        "cvar_historical_95": cvar_historical(returns, confidence=0.95),
+        "var_historical_99": var_historical(returns, confidence=0.99),
+        "cvar_historical_99": cvar_historical(returns, confidence=0.99),
+        # Entropic bounds. EVaR brackets the tail from above where CVaR gives
+        # only its average, and EDaR does the same for the drawdown path.
+        "entropic_var_95": entropic_var(returns, confidence=0.95),
+        "entropic_drawdown_risk_95": entropic_drawdown_risk(
+            returns, confidence=0.95, compound=compound),
+        # Shape, without assuming one.
+        "gini_dispersion": gini_dispersion(returns),
+        "semi_variance": semi_variance(returns),
+        "omega": omega(returns),
+    }
+    report.metrics = _suppress_inapplicable(report.metrics, series_unit)
+    report.metrics = _with_methodology(
+        report.metrics, periods_per_year=periods_per_year, frequency=frequency)
+
+    # Shape first: every Gaussian metric above depends on it, and the caveat
+    # says so when the tails are fat.
+    report.tables["distribution"] = distribution(returns)
+    report.tables["drawdown_profile"] = drawdown_profile(returns, compound=compound)
+
+    if benchmark is not None:
+        report.metrics["beta"] = beta(returns, benchmark)
+        report.metrics["tracking_error"] = tracking_error(
+            returns, benchmark, periods_per_year=periods_per_year)
+        report.metrics["information_ratio"] = information_ratio(
+            returns, benchmark, periods_per_year=periods_per_year)
+        report.metrics["capm_alpha"] = capm_alpha(
+            returns, benchmark, periods_per_year=periods_per_year, risk_free=risk_free)
+        report.metrics = _suppress_inapplicable(report.metrics, series_unit)
+        report.metrics = _with_methodology(
+            report.metrics, periods_per_year=periods_per_year, frequency=frequency)
+
+    if weights is not None and len(weights):
+        report.tables["exposure"] = exposure(weights)
+        report.tables["concentration"] = concentration(weights)
+        report.tables["turnover"] = turnover(weights, prior_weights)
+        if panel is not None and not panel.empty:
+            cov = covariance_matrix(panel)
+            contributions = risk_contributions(weights, cov)
+            report.tables["risk_contributions"] = [
+                {
+                    "symbol": str(idx),
+                    "weight": round(float(row["weight"]), 6),
+                    "marginal": round(float(row["marginal"]), 6),
+                    "component": round(float(row["component"]), 6),
+                    "share": round(float(row["share"]), 6),
+                }
+                for idx, row in contributions.head(20).iterrows()
+            ]
+            # Coverage travels with the decomposition. A table computed on 75%
+            # of the book is not a smaller version of the right answer; it is a
+            # different portfolio's risk.
+            report.tables["risk_contributions_coverage"] = {
+                "weight_coverage": contributions.attrs.get("weight_coverage"),
+                "complete": contributions.attrs.get("complete"),
+                "uncovered_symbols": contributions.attrs.get("uncovered_symbols", []),
+                "caveat": contributions.attrs.get("caveat"),
+                "minimum_required": MIN_RISK_COVERAGE,
+            }
+            report.tables["risk_contributions_method"] = (
+                "marginal = (Σw)ᵢ / σ_p ; component = wᵢ × marginalᵢ ; "
+                "components sum to σ_p by construction"
+            )
+    return report
