@@ -1,0 +1,439 @@
+"""
+Experiment definition — frozen before the run, hashed, and recorded.
+
+An experiment is a *declaration*, not a set of arguments. It names the models,
+the targets, the folds, the costs and the seed before anything executes, and
+`fingerprint()` hashes the whole thing so a result can be tied to the exact
+configuration that produced it. Changing a field changes the fingerprint, so a
+report cannot be silently re-attributed to a different setup.
+
+## Trial accounting is part of the declaration
+
+`declared_evaluations` is `len(models) × len(targets)`, computed from the
+definition rather than counted afterwards. `prior_evaluations` carries forward
+the cumulative exposure from `docs/RESEARCH_LEDGER.md`, because significance
+must be discounted against everything ever run on these folds — not against one
+study's own count. Resetting that number when the code changes is how
+multiple-testing bias gets laundered.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from dataclasses import dataclass, field
+from datetime import date as Date
+from typing import Any, Optional
+
+from src.quant.models.factory import ModelSpec, default_specs
+from src.quant.study.families import DEFAULT_ARMS, FeatureArm
+
+
+def git_commit() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def git_dirty() -> bool:
+    try:
+        return bool(subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, timeout=10
+        ).stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return True
+
+
+@dataclass(frozen=True)
+class ExperimentDefinition:
+    """Everything frozen before a study runs."""
+
+    experiment_id: str
+    objective: str
+    start: Date
+    end: Optional[Date]
+    step_sessions: int
+    targets: tuple[str, ...]
+    primary_target: str
+    models: tuple[ModelSpec, ...]
+    seed: int
+
+    universe_name: str = "liquid"
+    universe_size: int = 250
+    execution_lag_periods: int = 1
+    cost_half_spreads_bps: tuple[float, ...] = (1.0, 3.0, 5.0, 10.0, 20.0)
+    primary_half_spread_bps: float = 10.0
+    validation_sessions: int = 252
+    min_train_sessions: int = 756
+    holdout_sessions: int = 252
+    embargo_sessions: int = 5
+
+    #: Cumulative evaluations already run on these folds, from the ledger.
+    prior_evaluations: int = 0
+    run_negative_controls: bool = True
+    notes: tuple[str, ...] = ()
+
+    #: Pre-registered feature-family arms. Empty means a single arm using every
+    #: available feature, which is how EXP-001 to EXP-004 ran.
+    arms: tuple[FeatureArm, ...] = ()
+
+    #: Restrict the feature set to these families. Empty means every available
+    #: feature, which is how EXP-001 to EXP-005 ran their main leaderboard.
+    #: Naming families rather than columns keeps the definition stable when a
+    #: family gains a feature — and makes the restriction auditable.
+    feature_families: tuple[str, ...] = ()
+
+    #: Default search budget for a staged-search study, resolved by the training
+    #: CLI when `--budget` is not given. `None` means this study has a fixed
+    #: model ladder and is run by `study.run`, which is every study before
+    #: EXP-007.
+    search_budget: Optional[str] = None
+
+    #: Models refitted once per arm. The full `models` ladder still runs on the
+    #: complete feature set; this smaller set is what the ablation contrast uses,
+    #: because asking 17 models the same question 7 times costs 238 trials to
+    #: answer it no better than 42 do.
+    arm_models: tuple[ModelSpec, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.primary_target not in self.targets:
+            raise ValueError(
+                f"primary_target {self.primary_target!r} is not among targets {self.targets}. "
+                "The primary must be declared before results are seen."
+            )
+        if self.execution_lag_periods < 1:
+            raise ValueError(
+                "execution_lag_periods must be >= 1. A lag of 0 forms a position at "
+                "the close the signal was computed from, which is not achievable."
+            )
+        names = [spec.name for spec in self.models]
+        if len(names) != len(set(names)):
+            raise ValueError(f"duplicate model names: {names}")
+
+    @property
+    def declared_evaluations(self) -> int:
+        """Every fit whose result is looked at, including every ablation arm.
+
+        The arm evaluations are counted here rather than treated as a separate
+        budget. A contrast between arms is still a comparison a human looks at
+        and can select on, so it costs trials exactly like any other.
+        """
+        base = len(self.models) * len(self.targets)
+        arm_total = len(self.arms) * len(self.arm_models) * len(self.targets)
+        return base + arm_total
+
+    @property
+    def cumulative_evaluations(self) -> int:
+        """Exposure a significance claim must be discounted against."""
+        return self.prior_evaluations + self.declared_evaluations
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "experiment_id": self.experiment_id,
+            "objective": self.objective,
+            "start": str(self.start),
+            "end": str(self.end) if self.end else None,
+            "step_sessions": self.step_sessions,
+            "targets": list(self.targets),
+            "primary_target": self.primary_target,
+            "models": [spec.as_dict() for spec in self.models],
+            "model_count": len(self.models),
+            "seed": self.seed,
+            "universe_name": self.universe_name,
+            "universe_size": self.universe_size,
+            "execution_lag_periods": self.execution_lag_periods,
+            "cost_half_spreads_bps": list(self.cost_half_spreads_bps),
+            "primary_half_spread_bps": self.primary_half_spread_bps,
+            "validation_sessions": self.validation_sessions,
+            "min_train_sessions": self.min_train_sessions,
+            "holdout_sessions": self.holdout_sessions,
+            "embargo_sessions": self.embargo_sessions,
+            "declared_evaluations": self.declared_evaluations,
+            "prior_evaluations": self.prior_evaluations,
+            "cumulative_evaluations": self.cumulative_evaluations,
+            "run_negative_controls": self.run_negative_controls,
+            "feature_families": list(self.feature_families),
+            "arms": [arm.as_dict() for arm in self.arms],
+            "arm_models": [spec.as_dict() for spec in self.arm_models],
+            "arm_count": len(self.arms),
+            "notes": list(self.notes),
+            # Emitted only when set, so adding staged search left the dictionary
+            # — and therefore the fingerprint — of every earlier study byte
+            # identical. Committed artifacts reference those fingerprints; a new
+            # field must not silently invalidate them.
+            **({"search_budget": self.search_budget} if self.search_budget else {}),
+        }
+
+    def fingerprint(self) -> str:
+        encoded = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def exp_004(seed: int = 0) -> ExperimentDefinition:
+    """EXP-004 — a clean re-establishment of validation evidence.
+
+    Deliberately **the same model ladder and targets as the voided EXP-002**.
+    This is not an optimisation pass: changing the design at the same time as
+    fixing the pipeline would leave it impossible to say whether a difference in
+    results came from the fix or from the change. One variable moves.
+
+    Two things do change, and both are corrections rather than choices:
+
+    * `execution_lag_periods = 1` — EXP-002 formed positions at the close its
+      signal was computed from, which is not achievable.
+    * `prior_evaluations = 46` — the cumulative exposure recorded in the ledger.
+      EXP-002 discounted against its own 17 and therefore understated the
+      correction it needed.
+    """
+    return ExperimentDefinition(
+        experiment_id="EXP-004",
+        objective=(
+            "Re-establish validation evidence on the corrected pipeline after the "
+            "as-of join defect that voided EXP-002. Determine whether any learned "
+            "model shows incremental predictive information over free factor "
+            "baselines that survives transaction costs, a realistic execution lag, "
+            "and correction for cumulative multiple testing."
+        ),
+        start=Date(2014, 4, 1),
+        end=None,
+        step_sessions=5,
+        targets=("fwd_rank_21", "fwd_ret_21"),
+        primary_target="fwd_rank_21",
+        models=tuple(default_specs(seed)),
+        seed=seed,
+        execution_lag_periods=1,
+        prior_evaluations=46,
+        notes=(
+            "Model ladder and targets are unchanged from EXP-002 on purpose: with "
+            "the pipeline fix as the only moving part, a difference in results is "
+            "attributable to the fix.",
+            "The primary target is declared here, before any result is seen.",
+            "Negative controls run alongside the real targets. A control that finds "
+            "signal invalidates the study rather than the control.",
+            "The 252-session holdout is not read, scored, or used for selection.",
+        ),
+    )
+
+
+def exp_005(seed: int = 0) -> ExperimentDefinition:
+    """EXP-005 — does any additional data source add information over price?
+
+    EXP-004 established that the corrected pipeline finds nothing in the feature
+    set it had. Two readings of that survive: the signal is not there, or the
+    feature set never contained it. EXP-005 separates them by asking, one source
+    at a time, whether adding a family beats the price-and-volatility base.
+
+    **This is pre-registered.** The arms, the reduced model ladder, the metrics,
+    the thresholds and the trial count are all fixed in this function before the
+    run. The ladder structure means each arm differs from the base by exactly one
+    family, so a contrast is attributable.
+
+    Two families are genuinely new and neither has been tested before:
+
+    * `estimates` — 7,060,412 weekly analyst-revision vintages, dated by
+      OBSERVATION and therefore needing no publication gate. The one clean
+      fundamental-adjacent source in the repository.
+    * `fundamentals` — statement figures behind the `earnings_calendar` gate,
+      carrying UNQUANTIFIED restatement risk and isolated in their own arm so a
+      positive result there can be discounted appropriately.
+
+    Trial accounting: 17 models x 1 target on the full set, plus 7 arms x 6
+    models x 1 target = 17 + 42 = 59 declared, against 80 already spent.
+
+    The primary target is `fwd_rank_21` only. EXP-004 showed `fwd_ret_21` is won
+    by a baseline with every learned model at or below +0.0028; carrying it here
+    would double the trial count to re-answer a settled question.
+    """
+    arm_models = tuple(
+        spec for spec in default_specs(seed)
+        if spec.name in {
+            "ridge", "elastic_net", "random_forest",
+            "gradient_boosting", "hist_gradient_boosting", "extra_trees",
+        }
+    )
+    return ExperimentDefinition(
+        experiment_id="EXP-005",
+        objective=(
+            "Determine whether any additional data source — options, analyst "
+            "estimate revisions, or announcement-gated statement fundamentals — "
+            "adds out-of-sample predictive information over a price, volatility, "
+            "volume and macro base, after transaction costs, a one-period "
+            "execution lag, and correction for cumulative multiple testing."
+        ),
+        start=Date(2014, 4, 1),
+        end=None,
+        step_sessions=5,
+        targets=("fwd_rank_21",),
+        primary_target="fwd_rank_21",
+        models=tuple(default_specs(seed)),
+        arms=DEFAULT_ARMS,
+        arm_models=arm_models,
+        seed=seed,
+        execution_lag_periods=1,
+        prior_evaluations=80,
+        notes=(
+            "Pre-registered: arms, models, metrics and trial count are fixed in "
+            "exp_005() before the run. No arm may be added after results are seen.",
+            "The ladder adds ONE family per arm to a fixed base, so each contrast "
+            "is attributable to a single source.",
+            "Baselines are single-feature passthroughs and do not depend on the "
+            "arm, so they run once on the full set rather than seven times.",
+            "estimates and fundamentals have never been tested in this repository.",
+            "fundamentals carry UNQUANTIFIED restatement risk and are isolated in "
+            "arm F so a result there can be discounted separately.",
+            "The 252-session holdout is not read, scored, or used for selection, "
+            "and src/quant/study/firewall.py now enforces that at fit time.",
+        ),
+    )
+
+
+def exp_006(seed: int = 0) -> ExperimentDefinition:
+    """EXP-006 — is the C_base feature set tradeable?
+
+    EXP-005 answered "does any additional source add information?" with a clear
+    no, and left one thing unresolved as a side effect of how the ablation was
+    run: **the arms were never costed.** They measured rank information only —
+    no backtest, no execution lag applied to a book, no turnover, no Sharpe, no
+    factor attribution. So `C_base` finished the study with the highest observed
+    IC (+0.0290, t +2.66) and a completely unknown economic profile.
+
+    That is a real open question and a bad place to stop. A 27-feature set that
+    beats a 57-feature set on rank information is either a genuinely better
+    specification or a maximum picked out of a noisy surface, and the cheapest
+    way to tell is to put it through the full apparatus the main leaderboard
+    gets: costed backtest, cost sweep, six-factor attribution, deflated Sharpe
+    against the cumulative trial count, PBO, regimes.
+
+    **Pre-registered, and the prediction is recorded before the run.** EXP-005's
+    t = +2.66 is the maximum of 42 configurations, and the expected maximum of
+    139 zero-skill configurations is ≈ 2.62. The honest prior is therefore that
+    C_base will NOT survive: its t should fall toward the single-model value, and
+    its gross Sharpe should be negative like every other configuration measured
+    so far. Writing that down now is what makes the result informative either way.
+
+    The feature set is frozen to EXP-005's `C_base` arm — price, volatility,
+    volume and macro. Nothing is added, nothing is tuned, and no threshold moves.
+
+    Trial accounting: 17 models x 1 target = 17 declared, against 139 already
+    spent, for 156 cumulative.
+    """
+    return ExperimentDefinition(
+        experiment_id="EXP-006",
+        objective=(
+            "Determine whether the C_base feature set — price, volatility, volume "
+            "and macro, 27 cross-sectional features — carries an economically "
+            "meaningful edge, by putting it through the full costed apparatus the "
+            "EXP-005 ablation arms never received: transaction costs, execution "
+            "lag, turnover, six-factor attribution, and deflated Sharpe against "
+            "the cumulative trial count."
+        ),
+        start=Date(2014, 4, 1),
+        end=None,
+        step_sessions=5,
+        targets=("fwd_rank_21",),
+        primary_target="fwd_rank_21",
+        models=tuple(default_specs(seed)),
+        arms=(),                      # no ablation: the feature set is the point
+        arm_models=(),
+        feature_families=("price", "volatility", "volume", "macro"),
+        seed=seed,
+        execution_lag_periods=1,
+        prior_evaluations=139,
+        notes=(
+            "Pre-registered. The feature set is frozen to EXP-005's C_base arm and "
+            "nothing is tuned. No threshold moves.",
+            "RECORDED PREDICTION: C_base will not survive. Its t-statistic was the "
+            "maximum of 42 configurations and should regress toward the single-model "
+            "value; its gross Sharpe should be negative, as every configuration "
+            "measured across five studies has been.",
+            "This is the first time C_base is costed. EXP-005 measured rank "
+            "information only, which is why its IC could not be acted on.",
+            "The 252-session holdout is not read, scored or used for selection.",
+        ),
+    )
+
+
+def exp_007(seed: int = 0) -> ExperimentDefinition:
+    """EXP-007 — staged model search. The heaviest study in the register.
+
+    Every prior study fixed the model ladder and varied one thing. This one
+    searches: families, hyperparameters, feature arms and targets, in four
+    stages, with the budget declared before the run.
+
+    **The budget is the constraint, and it cuts the other way.** Every
+    configuration is a trial, and the deflated-Sharpe correction runs against the
+    cumulative count. The `deep` budget takes the register from 156 evaluations
+    to ~546, which raises the expected maximum |t| of a zero-skill population
+    from 3.09 to 3.21 — so a larger search makes a finding *harder* to defend,
+    not easier. `search.multiple_testing_cost` prints that before the run.
+
+    A gate is added here that earlier studies did not need: `survives_search_size`
+    requires the winner's |t| to exceed the expected maximum |t| of a zero-skill
+    population of the same size. Selecting the best of several hundred
+    configurations without that bar is how a search manufactures significance.
+
+    Stages:
+
+        1 SCREEN      every family, few configurations, on C_base / fwd_rank_21
+        2 TUNE        the competitive families, deeply, same context
+        3 CONTEXT     finalists across 5 feature arms x 2 targets
+        4 ROBUSTNESS  neighbours of each finalist
+
+    `prior_evaluations` is 156 — EXP-001 through EXP-006. The final count is
+    written by the runner once the search is complete, because a resumed or
+    interrupted run evaluates fewer configurations than the budget projects and
+    the *actual* number is what the correction must use.
+
+    The holdout is not read, scored, or used for selection. This study cannot
+    produce a production model; the best possible outcome is a DEVELOPMENT
+    CANDIDATE that the holdout may later be spent on.
+    """
+    return ExperimentDefinition(
+        experiment_id="EXP-007",
+        objective=(
+            "Search model families, hyperparameters, feature arms and targets in "
+            "four controlled stages to find the strongest configuration that "
+            "survives costs, turnover, overfitting diagnostics and a "
+            "multiple-testing correction scaled to the size of the search itself."
+        ),
+        start=Date(2014, 4, 1),
+        end=None,
+        step_sessions=5,
+        targets=("fwd_rank_21", "fwd_ret_21"),
+        primary_target="fwd_rank_21",
+        models=tuple(default_specs(seed)),
+        arms=(),
+        arm_models=(),
+        feature_families=(),          # the search varies this; not frozen here
+        seed=seed,
+        execution_lag_periods=1,
+        prior_evaluations=156,
+        search_budget="overnight",
+        notes=(
+            "Staged search. The budget is declared in src/quant/study/search.py "
+            "and selected at the command line; it is recorded in the artifact.",
+            "A larger budget raises the significance bar rather than lowering it. "
+            "The `survives_search_size` gate makes that explicit.",
+            "Selection uses validation folds only. The 252-session holdout is "
+            "reserved before any fold is cut and the firewall refuses its rows.",
+            "The best possible outcome is DEVELOPMENT CANDIDATE. Promotion "
+            "remains blocked until the holdout is spent under the contract.",
+            "NO PRODUCTION CANDIDATE is a valid and complete result.",
+        ),
+    )
+
+
+EXPERIMENTS: dict[str, Any] = {
+    "EXP-004": exp_004, "EXP-005": exp_005, "EXP-006": exp_006,
+    "EXP-007": exp_007,
+}
+
+
+def get_experiment(experiment_id: str, seed: int = 0) -> ExperimentDefinition:
+    if experiment_id not in EXPERIMENTS:
+        raise KeyError(f"unknown experiment {experiment_id!r}; known: {sorted(EXPERIMENTS)}")
+    return EXPERIMENTS[experiment_id](seed)
