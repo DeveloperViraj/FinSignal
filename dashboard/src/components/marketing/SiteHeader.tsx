@@ -1,0 +1,136 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useState, useSyncExternalStore } from 'react'
+import Logo from '@/components/ui/Logo'
+import ThemeToggle from '@/components/ui/ThemeToggle'
+
+const NAV = [
+  { href: '/#methodology', label: 'Methodology' },
+  { href: '/#pricing', label: 'Pricing' },
+  { href: '/news', label: 'News' },
+]
+
+/**
+ * Clerk marks auth state in the readable `__client_uat` cookie (a unix
+ * timestamp; 0 or absent = signed out). Reading it keeps the marketing
+ * pages free of Clerk's JavaScript while still reflecting the session.
+ */
+const noopSubscribe = () => () => {}
+function useSignedIn(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => /(?:^|;\s*)__client_uat(?:_[^=]*)?=[1-9]/.test(document.cookie),
+    () => false,
+  )
+}
+
+export default function SiteHeader() {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const pathname = usePathname()
+  const signedIn = useSignedIn()
+  // Every link inside the mobile menu closes it on click, so no
+  // navigation-watching effect is needed.
+
+  return (
+    <header
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        background: 'color-mix(in srgb, var(--paper) 92%, transparent)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        borderBottom: '1px solid var(--line)',
+      }}
+    >
+      <div
+        className="container"
+        style={{ display: 'flex', alignItems: 'center', height: 60, gap: 28 }}
+      >
+        <Link href="/" style={{ textDecoration: 'none', flexShrink: 0 }} aria-label="FinSignal home">
+          <Logo size={21} />
+        </Link>
+
+        <nav aria-label="Primary" className="site-nav" style={{ display: 'flex', gap: 4 }}>
+          {NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="btn btn--ghost btn--sm"
+              style={{
+                color: pathname === item.href ? 'var(--text)' : undefined,
+                fontWeight: 500,
+              }}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ThemeToggle />
+          {!signedIn && (
+            <Link href="/sign-in" className="btn btn--ghost btn--sm site-signin" style={{ fontWeight: 500 }}>
+              Sign in
+            </Link>
+          )}
+          {/* Not prefetched. Next fetches a link's payload on hover or when
+              it enters the viewport, and every terminal route is behind
+              Clerk, so the prefetch is answered with a cross-origin redirect
+              to the hosted sign-in page. That fails CORS, which put a failed
+              request and a console error on the public site for every visitor
+              who never clicked it. Navigation is unaffected — a click is a
+              full navigation, not a fetch. */}
+          <Link href="/terminal" prefetch={false} className="btn btn--primary btn--sm">
+            Open terminal
+          </Link>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            {menuOpen ? 'Close' : 'Menu'}
+          </button>
+        </div>
+      </div>
+
+      {menuOpen && (
+        <nav
+          id="mobile-nav"
+          aria-label="Mobile"
+          className="fade-in"
+          style={{
+            borderTop: '1px solid var(--line)',
+            background: 'var(--paper)',
+            padding: '8px 20px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+        >
+          {[...NAV, ...(signedIn ? [] : [{ href: '/sign-in', label: 'Sign in' }])].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                padding: '12px 4px',
+                textDecoration: 'none',
+                fontSize: '0.9375rem',
+                fontWeight: 500,
+                color: 'var(--text)',
+                borderBottom: '1px solid var(--line)',
+              }}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      )}
+    </header>
+  )
+}
