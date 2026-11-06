@@ -1,0 +1,466 @@
+/**
+ * Market workspace.
+ *
+ * The legacy market dashboard rendered the same payload as a stack of cards.
+ * The data is good — breadth with history, eleven sectors with momentum and
+ * volatility, a rule-based regime, dated events — and it deserves a workspace.
+ *
+ * Two decisions shape this. Breadth is drawn as a series rather than a number,
+ * because a breadth score of 0.6 means something entirely different rising than
+ * falling. And sectors are ranked in a sortable table rather than a grid, since
+ * the question is always which is leading, and a grid makes that a scan.
+ *
+ * Every figure carries its source. Market data here is live vendor data, which
+ * is a different kind of number from the recorded research everywhere else in
+ * the product, and the rail says so.
+ */
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+
+import { BarRows, TimeSeries } from '@/components/system/charts'
+import { Grid, Panel, Prose, StateBlock, Status, Value, type ResearchState } from '@/components/system'
+import { DataTable, type DataColumn } from '@/components/system/DataTable'
+import { readerError } from '@/lib/failure'
+import { recordVisit } from '@/lib/research/history'
+import { ObjectHeader, StripSkeleton, TableSkeleton } from '@/components/system/composition'
+import WhatChanged from './WhatChanged'
+import MarketMap from './MarketMap'
+import { sectionState, shortfall, type DashboardCoverage, type SectorRow } from '@/lib/dashboardInsights'
+import type { MapBreadth } from './MarketMap'
+import { readResource } from '@/lib/resource'
+
+interface Sector {
+  symbol: string
+  name: string
+  price: number | null
+  strength_21d: number | null
+  momentum_63d: number | null
+  volatility: number | null
+  above_50d: boolean | null
+  verdict?: string | null
+  source?: string | null
+}
+
+interface Breadth {
+  /* As the dashboard payload actually shapes it. The table read `change`,
+     which no row carries, so every index showed an em dash where its move
+     should be — and its price rendered signed and green, because a bare
+     `digits` falls through to the signed, toned default. */
+  indexes?: {
+    symbol: string
+    name?: string
+    price?: number | null
+    change_1d?: number | null
+    change_1w?: number | null
+    source?: string | null
+  }[]
+  sectors_above_50d?: number | null
+  sector_count?: number | null
+  breadth_score?: number | null
+  /* As the dashboard sends it: ninety points of {date, score}. This was
+     declared as {date, value}, so both readers below discarded the whole
+     series — the breadth chart said "no observations" beside a panel whose
+     own caption described the ninety days it was not drawing. */
+  history?: { date: string; score: number }[] | number[]
+  explain?: string | null
+  leadership?: string | null
+  laggard?: string | null
+}
+
+interface MacroCard { label?: string; value?: number | string | null; unit?: string | null; digits?: number | null; source?: string | null; updated?: string | null }
+
+interface Dashboard {
+  macro?: { cards?: MacroCard[]; regime?: Record<string, unknown> | string | null; note?: string | null }
+  breadth?: Breadth
+  sectors?: Sector[]
+  events?: { date: string; type?: string; title?: string; importance?: string; days_away?: number; explain?: string }[]
+  generated_at?: string
+  cached?: boolean
+  /** Which parts of the snapshot arrived; see lib/dashboardInsights. */
+  status?: 'complete' | 'partial' | 'unavailable'
+  coverage?: DashboardCoverage
+}
+
+const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+function importanceState(v?: string): ResearchState {
+  const s = (v ?? '').toLowerCase()
+  if (s.includes('high')) return 'blocked'
+  if (s.includes('med')) return 'stale'
+  return 'recorded'
+}
+
+export default function MarketWorkspace() {
+  const [data, setData] = useState<Dashboard | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    readResource<Dashboard>('/api/dashboard', 'snapshot')
+      .then((d) => { if (alive) setData(d) })
+      .catch((e: Error) => { if (alive) setError(e.message) })
+    return () => { alive = false }
+  }, [])
+
+  const sectors = useMemo(() => data?.sectors ?? [], [data])
+
+  const history = useMemo(() => {
+    const h = data?.breadth?.history
+    if (!Array.isArray(h) || !h.length) return []
+    if (typeof h[0] === 'number') {
+      return (h as number[]).map((v, i) => ({ x: i, y: v }))
+    }
+    return (h as { date: string; score: number }[]).map((p) => ({ x: p.date, y: p.score }))
+  }, [data])
+
+  const columns: DataColumn<Sector>[] = useMemo(() => [
+    {
+      key: 'sym', header: 'Sector', width: '22%', sort: (s) => s.name, text: (s) => `${s.symbol} ${s.name}`,
+      render: (s) => (
+        <Link
+          href={`/company/${encodeURIComponent(s.symbol)}`}
+          style={{ color: 'inherit' }}
+          onClick={() => recordVisit({ kind: 'security', id: s.symbol, label: s.symbol, detail: s.name })}
+        >
+          <span className="sys-mono">{s.symbol}</span>
+          <span className="sys-meta" style={{ marginLeft: 6 }}>{s.name}</span>
+        </Link>
+      ),
+    },
+    { key: 'price', header: 'Price', unit: 'currency', numeric: true, sort: (s) => n(s.price), render: (s) => <Value value={n(s.price)} kind="currency" /> },
+    {
+      key: 's21', header: 'Strength', unit: '21d', numeric: true, sort: (s) => n(s.strength_21d),
+      render: (s) => <Value value={n(s.strength_21d)} kind="percent" digits={1} signed tone />,
+    },
+    {
+      key: 'm63', header: 'Momentum', unit: '63d', numeric: true, sort: (s) => n(s.momentum_63d),
+      render: (s) => <Value value={n(s.momentum_63d)} kind="percent" digits={1} signed tone />,
+    },
+    {
+      key: 'vol', header: 'Volatility', unit: 'ann.', numeric: true, sort: (s) => n(s.volatility),
+      render: (s) => <Value value={n(s.volatility)} kind="percent" digits={1} />,
+    },
+    {
+      key: 'ma', header: 'Above 50d', width: '11%', sort: (s) => (s.above_50d ? 1 : 0),
+      render: (s) => s.above_50d === null || s.above_50d === undefined
+        ? <span className="sys-null">—</span>
+        : <Status state={s.above_50d ? 'recorded' : 'blocked'} label={s.above_50d ? 'yes' : 'no'} />,
+    },
+    {
+      key: 'src', header: 'Source', width: '12%', optional: true, sort: (s) => s.source ?? null,
+      render: (s) => <span className="sys-meta sys-meta--strong">{s.source ?? '—'}</span>,
+    },
+  ], [])
+
+  if (error) {
+    return (
+      <Panel title="Market" state="unavailable">
+        <StateBlock
+          state="unavailable"
+          title="Market data could not be read"
+          detail={`${readerError(error)}. Nothing is shown in its place — an unreachable feed is not a flat market.`}
+        />
+      </Panel>
+    )
+  }
+  if (!data) {
+    return (
+      <>
+        <StripSkeleton />
+        <Panel title="Sectors" state="waking" flush><TableSkeleton rows={11} columns={6} /></Panel>
+      </>
+    )
+  }
+
+  const b = data.breadth ?? {}
+
+  /* The market map needs complete rows: a price, a volatility, an above-50d
+     flag, a verdict and — the one this workspace's payload type does not even
+     name — ninety rebased closes per sector. Anything short of that is refused
+     rather than coerced, because a sector drawn without its line reads as a
+     flat sector rather than a missing one. */
+  const mappable: { breadth: MapBreadth; sectors: SectorRow[] } | null = (() => {
+    const rows = data.sectors ?? []
+    if (!rows.length || b.breadth_score === undefined) return null
+    // The map plots {date, score} and so does the payload. Bare numbers carry
+    // no dates and cannot be plotted against one, so they are refused rather
+    // than given an index masquerading as a date.
+    const raw = b.history ?? []
+    const history = raw.every((h): h is { date: string; score: number } =>
+      typeof h === 'object' && h !== null && 'date' in h && 'score' in h)
+      ? raw
+      : undefined
+    const complete = rows.filter((r): r is Sector & { history: number[] } => {
+      const h = (r as { history?: unknown }).history
+      return Array.isArray(h) && h.length > 1
+        && typeof r.price === 'number'
+        && typeof r.volatility === 'number'
+        && typeof r.above_50d === 'boolean'
+    })
+    if (complete.length !== rows.length) return null
+    return {
+      breadth: {
+        breadth_score: b.breadth_score ?? null,
+        sectors_above_50d: b.sectors_above_50d,
+        sector_count: b.sector_count,
+        explain: b.explain,
+        history,
+        // The map's tape reads change_1d, and so does the payload. It was
+        // mapping from `i.change`, which no row carries, so every index on the
+        // tape rendered without its move.
+        indexes: b.indexes?.map((i) => ({ symbol: i.symbol, price: i.price, change_1d: i.change_1d })),
+      },
+      sectors: complete.map((r) => ({ ...r, verdict: r.verdict ?? '' })) as SectorRow[],
+    }
+  })()
+  const above = n(b.sectors_above_50d)
+  const count = n(b.sector_count)
+  // The macro block records the regime as `status`, not `state`. Reading the
+  // wrong key rendered an em dash on the market page for a value the payload
+  // always carried — and the explanation, the curve reading and the recession
+  // flag alongside it were never shown at all.
+  const macroRegime = data.macro?.regime
+  const regimeObj = typeof macroRegime === 'object' && macroRegime !== null
+    ? macroRegime as Record<string, unknown>
+    : null
+  const regime = typeof macroRegime === 'string'
+    ? macroRegime
+    : typeof regimeObj?.status === 'string' ? regimeObj.status : undefined
+  const regimeExplain = typeof regimeObj?.explain === 'string' ? regimeObj.explain : undefined
+  const yieldCurve = typeof regimeObj?.yield_curve === 'string' ? regimeObj.yield_curve : undefined
+  const recessionWarning = regimeObj?.recession_warning === true
+
+  return (
+    <>
+      <ObjectHeader
+        glyph="M"
+        name="Market"
+        kind="live vendor data, not point-in-time"
+        state={data.status === 'unavailable' ? 'unavailable' : data.status === 'partial' ? 'warning' : 'live'}
+        detail={data.generated_at ? `generated ${data.generated_at.slice(0, 19)}${data.cached ? ', cached' : ''}` : undefined}
+        facts={[
+          { label: 'Breadth', value: n(b.breadth_score), kind: 'percent', digits: 0, title: b.explain ?? undefined },
+          { label: 'Above 50d', value: above, digits: 0, kind: 'count' },
+          { label: 'Sectors', value: count, digits: 0, kind: 'count' },
+          { label: 'Regime', value: regime ?? null, digits: 0, kind: 'count', title: regimeExplain },
+          { label: 'Events', value: data.events?.length ?? null, digits: 0 , kind: 'count'},
+        ]}
+      />
+
+
+      {/* Before the detail: what moved since this reader last looked. A daily
+          user opens a market page to find the delta, and making them
+          reconstruct it from six panels is making them do arithmetic the
+          product already has the data to do. */}
+      <WhatChanged data={data} />
+
+      {/* Eleven sectors on a shared rebased scale. A number says where a
+          sector ended; the line says how it got there, and a sector up four
+          percent in a straight line is not the same market as one up four
+          percent after a twelve percent round trip.
+
+          The map draws a sparkline per sector from `history`, which this
+          workspace's own payload type does not even declare — so the rows are
+          checked for it rather than cast into the shape the map wants. A map
+          with three of eleven sectors missing their line is a map that reports
+          a flat sector as a quiet one. */}
+      {mappable ? <MarketMap breadth={mappable.breadth} sectors={mappable.sectors} /> : null}
+
+      <div style={{ display: 'grid', gap: 'var(--d-4)', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)' }}>
+        <Panel
+          title="Breadth"
+          subtitle={shortfall(data, 'sectors') ? `${shortfall(data, 'sectors')} sectors reported` : b.explain ? undefined : 'share of sectors above their 50-day average'}
+          state={sectionState(data, 'sectors')}
+        >
+          {history.length > 1 ? (
+            <TimeSeries
+              series={[{ name: 'breadth', points: history, color: 'var(--ink)' }]}
+              unit="share of sectors above their 50-day average"
+              method="count of sector ETFs trading above a 50-session simple moving average, over the tracked set"
+              height={200}
+            />
+          ) : (
+            <StateBlock state="unavailable" title="No breadth history recorded" detail="The current reading is shown above; the series behind it was not returned." />
+          )}
+          {b.explain ? (
+            <p style={{ margin: 'var(--d-2) 0 0', fontSize: 'var(--t-body)', lineHeight: 'var(--lh-body)', color: 'var(--ink-muted)', maxWidth: '82ch' }}>
+              {b.explain}
+            </p>
+          ) : null}
+          <p style={{ margin: 'var(--d-2) 0 0', fontSize: 'var(--t-meta)', color: 'var(--ink-faint)', lineHeight: 'var(--lh-body)' }}>
+            A breadth score means something different rising than falling, which is
+            why the series is shown rather than the number alone.
+          </p>
+        </Panel>
+
+        <Panel title="Leadership" subtitle={shortfall(data, 'sectors') ? `${shortfall(data, 'sectors')} sectors reported` : undefined} state={sectionState(data, 'sectors')}>
+          <table className="sys-table sys-table--compact">
+            <tbody>
+              <tr><td>Leading</td><td className="num" style={{ textAlign: 'left' }}>{b.leadership ?? <span className="sys-null">—</span>}</td></tr>
+              <tr><td>Lagging</td><td className="num" style={{ textAlign: 'left' }}>{b.laggard ?? <span className="sys-null">—</span>}</td></tr>
+            </tbody>
+          </table>
+          {b.indexes?.length ? (
+            <div style={{ marginTop: 'var(--d-3)' }}>
+              <div className="sys-label" style={{ marginBottom: 'var(--d-1)' }}>Indexes</div>
+              {/* Five columns in a half-width panel. Below about 800px the
+                  workspace itself was scrolling sideways to fit it, which is
+                  the page giving way for a table — it is the table that
+                  should. Its siblings on this page already scroll; this one
+                  was the exception. */}
+              <div className="sys-scroll-x">
+              <table className="sys-table sys-table--compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Index</th>
+                    <th scope="col" className="num">Last</th>
+                    <th scope="col" className="num">1 day</th>
+                    <th scope="col" className="num">1 week</th>
+                    <th scope="col">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.indexes.map((i) => (
+                    <tr key={i.symbol}>
+                      <td className="sys-mono">{i.symbol}</td>
+                      <td className="num"><Value value={n(i.price)} kind="currency" /></td>
+                      <td className="num"><Value value={n(i.change_1d)} kind="percent" digits={2} signed tone /></td>
+                      <td className="num"><Value value={n(i.change_1w)} kind="percent" digits={2} signed tone /></td>
+                      <td><span className="sys-meta">{i.source ?? '—'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </div>
+          ) : null}
+        </Panel>
+      </div>
+
+      <Panel title="Sectors" subtitle={`${sectors.length} tracked`} flush>
+        <DataTable
+          columns={columns} rows={sectors} rowKey={(s) => s.symbol}
+          density="compact" filterPlaceholder="filter sectors"
+          initialSort={{ key: 'm63', direction: 'desc' }}
+          onSelect={(s) => recordVisit({ kind: 'security', id: s.symbol, label: s.symbol, detail: s.name })}
+        />
+      </Panel>
+
+      <Grid>
+        <Panel title="Momentum dispersion" subtitle="63-day, by sector">
+          <BarRows
+            kind="percent"
+            unit="63-day momentum"
+            rows={[...sectors]
+              .sort((a, b2) => (n(b2.momentum_63d) ?? 0) - (n(a.momentum_63d) ?? 0))
+              .map((s) => ({ label: s.symbol, value: n(s.momentum_63d), note: s.name }))}
+          />
+          <p style={{ margin: 'var(--d-2) 0 0', fontSize: 'var(--t-meta)', color: 'var(--ink-muted)', lineHeight: 'var(--lh-body)' }}>
+            The spread between the top and bottom sector is the cross-sectional
+            opportunity a long/short book is trying to capture. A narrow spread
+            means there is little to separate, whatever the index level does.
+          </p>
+        </Panel>
+
+        <Panel title="Volatility by sector">
+          <BarRows
+            kind="percent"
+            unit="annualised volatility"
+            rows={[...sectors]
+              .sort((a, b2) => (n(b2.volatility) ?? 0) - (n(a.volatility) ?? 0))
+              .map((s) => ({ label: s.symbol, value: n(s.volatility), note: s.name }))}
+          />
+        </Panel>
+      </Grid>
+
+      {data.macro?.cards?.length || regimeObj ? (
+        <Panel
+          title="Macro"
+          state={sectionState(data, 'macro_cards')}
+          subtitle={shortfall(data, 'macro_cards') ? `${shortfall(data, 'macro_cards')} series reported` : data.macro?.note ?? undefined}
+        >
+          {/* The regime is a composite the backend already explains. Showing
+              only its one-word verdict in the header discards the curve
+              reading, the recession flag and the rule that produced it. */}
+          {regimeObj ? (
+            <div className="sys-strip sys-strip--wrap" style={{ marginBottom: 'var(--d-2)' }}>
+              <div className="sys-strip-item">
+                <span className="k">Regime</span>
+                <span className="v"><span className="sys-num">{regime ?? '—'}</span></span>
+              </div>
+              <div className="sys-strip-item">
+                <span className="k">Yield curve</span>
+                <span className="v"><span className="sys-num">{yieldCurve ? yieldCurve.toUpperCase() : '—'}</span></span>
+              </div>
+              <div className="sys-strip-item">
+                <span className="k">Recession flag</span>
+                <span className="v"><span className="sys-num">{recessionWarning ? 'RAISED' : 'NOT RAISED'}</span></span>
+              </div>
+              {typeof regimeObj.risk_multiplier === 'number' ? (
+                <div className="sys-strip-item">
+                  <span className="k">Risk multiplier</span>
+                  <span className="v"><Value value={regimeObj.risk_multiplier} digits={2} kind="multiple" /></span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {regimeExplain ? (
+            <p className="sys-prose sys-prose--tight" style={{ marginBottom: 'var(--d-2)' }}>{regimeExplain}</p>
+          ) : null}
+          <div className="sys-strip sys-strip--wrap">
+            {(data.macro?.cards ?? []).map((c, i) => (
+              <div className="sys-strip-item" key={c.label ?? i}>
+                <span className="k">{c.label ?? '—'}</span>
+                <span className="v">
+                  {typeof c.value === 'number'
+                    ? <Value value={c.value} digits={c.digits ?? 2} unit={c.unit ?? undefined} signed={false} tone={false} />
+                    : <span className="sys-num">{c.value ?? '—'}</span>}
+                </span>
+                {c.source || c.updated ? (
+                  <span className="sys-meta" style={{ display: 'block', marginTop: 2 }}>
+                    {[c.source, c.updated?.slice(0, 10)].filter(Boolean).join(' · ')}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
+      {data.events?.length ? (
+        <Panel title="Events" subtitle={`${data.events.length} ahead`} flush>
+          <div className="sys-scroll-x">
+            <table className="sys-table sys-table--compact">
+              <thead>
+                <tr><th scope="col">Date</th><th scope="col" className="num">In</th><th scope="col">Type</th><th scope="col">Event</th><th scope="col">Importance</th></tr>
+              </thead>
+              <tbody>
+                {data.events.map((e, i) => (
+                  <tr key={`${e.date}-${i}`}>
+                    <td className="num">{e.date}</td>
+                    <td className="num"><Value value={n(e.days_away)} kind="count" unit="d" /></td>
+                    <td><span className="sys-meta sys-meta--strong">{e.type ?? '—'}</span></td>
+                    <td style={{ whiteSpace: 'normal' }} title={e.explain}>{e.title ?? '—'}</td>
+                    <td><Status state={importanceState(e.importance)} label={e.importance ?? 'unknown'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      ) : null}
+
+      <Panel title="What this is, and is not">
+        <Prose>
+          Live vendor data, generated {data.generated_at?.slice(0, 19) ?? 'at an unrecorded time'}
+          {data.cached ? ' and served from cache' : ''}. It is a different kind of
+          number from the recorded research elsewhere in this product: it describes
+          the market now, changes between one view and the next, and is not
+          point-in-time. No factor and no experiment is built from it.
+        </Prose>
+      </Panel>
+    </>
+  )
+}

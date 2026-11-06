@@ -1,0 +1,2321 @@
+{
+  "classification_intervals": 1024,
+  "coverage": {
+    "by_period": {
+      "fold_0": {
+        "cik_present": 0.9893132170359893,
+        "identity_contradicted": 0.0014144271570014145,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9893132170359893,
+        "market_cap_of_identified": 0.8684340931615461,
+        "market_cap_of_identified_all": 0.835186656076251,
+        "market_cap_present": 0.8262611975483263,
+        "no_periodic_filings": 0.004007543611504008,
+        "rows": 12726,
+        "shares_of_identified": 0.835186656076251,
+        "shares_present": 0.8262611975483263,
+        "sic_of_identified": 0.9615567911040508,
+        "symbols": 409,
+        "unresolved": 0.0052648121955052645
+      },
+      "fold_1": {
+        "cik_present": 0.9750040577828275,
+        "identity_contradicted": 0.005843207271546827,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9750040577828275,
+        "market_cap_of_identified": 0.8890442075834353,
+        "market_cap_of_identified_all": 0.8470118195438655,
+        "market_cap_present": 0.8258399610452849,
+        "no_periodic_filings": 0.006167829897743873,
+        "rows": 12322,
+        "shares_of_identified": 0.8470118195438655,
+        "shares_present": 0.8258399610452849,
+        "sic_of_identified": 0.9747794240053271,
+        "symbols": 387,
+        "unresolved": 0.012984905047881837
+      },
+      "fold_2": {
+        "cik_present": 0.9776179702650291,
+        "identity_contradicted": 0.005494505494505495,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9776179702650291,
+        "market_cap_of_identified": 0.8960013729191694,
+        "market_cap_of_identified_all": 0.8630465327713034,
+        "market_cap_present": 0.8437297996121526,
+        "no_periodic_filings": 0.005090497737556561,
+        "rows": 12376,
+        "shares_of_identified": 0.8630465327713034,
+        "shares_present": 0.8437297996121526,
+        "sic_of_identified": 0.9911562939085875,
+        "symbols": 405,
+        "unresolved": 0.011797026502908856
+      },
+      "fold_3": {
+        "cik_present": 0.9883842025154209,
+        "identity_contradicted": 0.003604902667627974,
+        "identity_partial": 0.0009613073780341264,
+        "identity_trusted": 0.9883842025154209,
+        "market_cap_of_identified": 0.875829383886256,
+        "market_cap_of_identified_all": 0.8237964013616469,
+        "market_cap_present": 0.814227349194905,
+        "no_periodic_filings": 0.0040054474084755265,
+        "rows": 12483,
+        "shares_of_identified": 0.8237964013616469,
+        "shares_present": 0.814227349194905,
+        "sic_of_identified": 0.9816826065812936,
+        "symbols": 400,
+        "unresolved": 0.0030441400304414
+      },
+      "fold_4": {
+        "cik_present": 0.9896468699839487,
+        "identity_contradicted": 0.004333868378812199,
+        "identity_partial": 0.00032102728731942215,
+        "identity_trusted": 0.9896468699839487,
+        "market_cap_of_identified": 0.8992862116991643,
+        "market_cap_of_identified_all": 0.8378071527045657,
+        "market_cap_present": 0.8291332263242376,
+        "no_periodic_filings": 0.0040128410914927765,
+        "rows": 12460,
+        "shares_of_identified": 0.8378071527045657,
+        "shares_present": 0.8291332263242376,
+        "sic_of_identified": 0.9938366718027735,
+        "symbols": 378,
+        "unresolved": 0.0016853932584269663
+      },
+      "fold_5": {
+        "cik_present": 0.9909711863076077,
+        "identity_contradicted": 0.004082594017429536,
+        "identity_partial": 0.0009421370809452775,
+        "identity_trusted": 0.9909711863076077,
+        "market_cap_of_identified": 0.90807962529274,
+        "market_cap_of_identified_all": 0.8601647916336556,
+        "market_cap_present": 0.8523985239852399,
+        "no_periodic_filings": 0.00400408259401743,
+        "rows": 12737,
+        "shares_of_identified": 0.8601647916336556,
+        "shares_present": 0.8523985239852399,
+        "sic_of_identified": 0.9954048486769134,
+        "symbols": 386,
+        "unresolved": 0.0
+      },
+      "fold_6": {
+        "cik_present": 0.9887127761767531,
+        "identity_contradicted": 0.006964457252641691,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9887127761767531,
+        "market_cap_of_identified": 0.9111942837699898,
+        "market_cap_of_identified_all": 0.8672981944781799,
+        "market_cap_present": 0.8575088056356068,
+        "no_periodic_filings": 0.004002561639449248,
+        "rows": 12492,
+        "shares_of_identified": 0.8672981944781799,
+        "shares_present": 0.8575088056356068,
+        "sic_of_identified": 0.9935227916767873,
+        "symbols": 385,
+        "unresolved": 0.0003202049311559398
+      },
+      "fold_7": {
+        "cik_present": 0.9879168301294625,
+        "identity_contradicted": 0.006433895645351118,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9879168301294625,
+        "market_cap_of_identified": 0.9118742242449317,
+        "market_cap_of_identified_all": 0.8752283377015329,
+        "market_cap_present": 0.864652805021577,
+        "no_periodic_filings": 0.004629266378972146,
+        "rows": 12745,
+        "shares_of_identified": 0.8752283377015329,
+        "shares_present": 0.864652805021577,
+        "sic_of_identified": 0.9965054403939322,
+        "symbols": 415,
+        "unresolved": 0.0010200078462142017
+      },
+      "train_only": {
+        "cik_present": 0.9869579728376678,
+        "identity_contradicted": 0.00012836640907807245,
+        "identity_partial": 0.0002310595363405304,
+        "identity_trusted": 0.9869579728376678,
+        "market_cap_of_identified": 0.8765570367132867,
+        "market_cap_of_identified_all": 0.8347163332726374,
+        "market_cap_present": 0.8238299401812533,
+        "no_periodic_filings": 0.004133398372313933,
+        "rows": 38951,
+        "shares_of_identified": 0.8347163332726374,
+        "shares_present": 0.8238299401812533,
+        "sic_of_identified": 0.9419920401633587,
+        "symbols": 514,
+        "unresolved": 0.008549202844599625
+      }
+    },
+    "by_year": {
+      "2014": {
+        "cik_present": 0.9869099154813441,
+        "identity_contradicted": 0.0005153576582148011,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9869099154813441,
+        "market_cap_of_identified": 0.8130548302872063,
+        "market_cap_present": 0.8024118738404453,
+        "no_periodic_filings": 0.004019789734075448,
+        "rows": 9702,
+        "shares_of_identified": 0.8130548302872063,
+        "shares_present": 0.8024118738404453,
+        "sic_of_identified": 0.9197911227154048,
+        "symbols": 386,
+        "unresolved": 0.008554937126365698
+      },
+      "2015": {
+        "cik_present": 0.9841587326986159,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9841587326986159,
+        "market_cap_of_identified": 0.8371677099422811,
+        "market_cap_present": 0.8239059124729978,
+        "no_periodic_filings": 0.004400352028162253,
+        "rows": 12499,
+        "shares_of_identified": 0.8371677099422811,
+        "shares_present": 0.8239059124729978,
+        "sic_of_identified": 0.9418746443378587,
+        "symbols": 388,
+        "unresolved": 0.011440915273221858
+      },
+      "2016": {
+        "cik_present": 0.98768,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.00072,
+        "identity_trusted": 0.98768,
+        "market_cap_of_identified": 0.8459420055078568,
+        "market_cap_present": 0.83552,
+        "no_periodic_filings": 0.004,
+        "rows": 12500,
+        "shares_of_identified": 0.8459420055078568,
+        "shares_present": 0.83552,
+        "sic_of_identified": 0.9563421351044873,
+        "symbols": 370,
+        "unresolved": 0.0076
+      },
+      "2017": {
+        "cik_present": 0.9946641556811049,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9946641556811049,
+        "market_cap_of_identified": 0.8373303881350583,
+        "market_cap_present": 0.8328625235404896,
+        "no_periodic_filings": 0.004001883239171375,
+        "rows": 12744,
+        "shares_of_identified": 0.8373303881350583,
+        "shares_present": 0.8328625235404896,
+        "sic_of_identified": 0.9566898075102556,
+        "symbols": 400,
+        "unresolved": 0.0013339610797237916
+      },
+      "2018": {
+        "cik_present": 0.9753813867140205,
+        "identity_contradicted": 0.005650173541044475,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9753813867140205,
+        "market_cap_of_identified": 0.843098311817279,
+        "market_cap_present": 0.8223424005165872,
+        "no_periodic_filings": 0.005730890305916539,
+        "rows": 12389,
+        "shares_of_identified": 0.843098311817279,
+        "shares_present": 0.8223424005165872,
+        "sic_of_identified": 0.970374048328368,
+        "symbols": 403,
+        "unresolved": 0.013237549439018484
+      },
+      "2019": {
+        "cik_present": 0.9771172638436482,
+        "identity_contradicted": 0.00513029315960912,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9771172638436482,
+        "market_cap_of_identified": 0.8573214434536212,
+        "market_cap_present": 0.8377035830618893,
+        "no_periodic_filings": 0.005537459283387622,
+        "rows": 12280,
+        "shares_of_identified": 0.8573214434536212,
+        "shares_present": 0.8377035830618893,
+        "sic_of_identified": 0.986165513792816,
+        "symbols": 383,
+        "unresolved": 0.012214983713355049
+      },
+      "2020": {
+        "cik_present": 0.9836091788598385,
+        "identity_contradicted": 0.004637403054289598,
+        "identity_partial": 0.0003997761253697929,
+        "identity_trusted": 0.9836091788598385,
+        "market_cap_of_identified": 0.8466103072671111,
+        "market_cap_present": 0.8327336691452787,
+        "no_periodic_filings": 0.003997761253697929,
+        "rows": 12507,
+        "shares_of_identified": 0.8466103072671111,
+        "shares_present": 0.8327336691452787,
+        "sic_of_identified": 0.9864249715493416,
+        "symbols": 412,
+        "unresolved": 0.007355880706804189
+      },
+      "2021": {
+        "cik_present": 0.9901212753995663,
+        "identity_contradicted": 0.0036141675367440365,
+        "identity_partial": 0.0005622038390490724,
+        "identity_trusted": 0.9901212753995663,
+        "market_cap_of_identified": 0.8170019467878001,
+        "market_cap_present": 0.8089310095574652,
+        "no_periodic_filings": 0.004015741707493374,
+        "rows": 12451,
+        "shares_of_identified": 0.8170019467878001,
+        "shares_present": 0.8089310095574652,
+        "sic_of_identified": 0.9888870863075925,
+        "symbols": 380,
+        "unresolved": 0.0016866115171472172
+      },
+      "2022": {
+        "cik_present": 0.9911254221314694,
+        "identity_contradicted": 0.0036126600172779392,
+        "identity_partial": 0.0012565773973140658,
+        "identity_trusted": 0.9911254221314694,
+        "market_cap_of_identified": 0.8599841521394612,
+        "market_cap_present": 0.8523521558155973,
+        "no_periodic_filings": 0.004005340453938585,
+        "rows": 12733,
+        "shares_of_identified": 0.8599841521394612,
+        "shares_present": 0.8523521558155973,
+        "sic_of_identified": 0.9946117274167987,
+        "symbols": 388,
+        "unresolved": 0.0
+      },
+      "2023": {
+        "cik_present": 0.9895132885046429,
+        "identity_contradicted": 0.006163944924751841,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9895132885046429,
+        "market_cap_of_identified": 0.8661920556589273,
+        "market_cap_present": 0.8571085494716618,
+        "no_periodic_filings": 0.004002561639449248,
+        "rows": 12492,
+        "shares_of_identified": 0.8661920556589273,
+        "shares_present": 0.8571085494716618,
+        "sic_of_identified": 0.9949033249737076,
+        "symbols": 391,
+        "unresolved": 0.0003202049311559398
+      },
+      "2024": {
+        "cik_present": 0.98864,
+        "identity_contradicted": 0.00664,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.98864,
+        "market_cap_of_identified": 0.8702055348761936,
+        "market_cap_present": 0.86032,
+        "no_periodic_filings": 0.004,
+        "rows": 12500,
+        "shares_of_identified": 0.8702055348761936,
+        "shares_present": 0.86032,
+        "sic_of_identified": 0.9937692183201166,
+        "symbols": 392,
+        "unresolved": 0.00072
+      },
+      "2025": {
+        "cik_present": 0.9853170189098999,
+        "identity_contradicted": 0.008008898776418243,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9853170189098999,
+        "market_cap_of_identified": 0.8780763151953037,
+        "market_cap_present": 0.8651835372636263,
+        "no_periodic_filings": 0.005784204671857619,
+        "rows": 4495,
+        "shares_of_identified": 0.8780763151953037,
+        "shares_present": 0.8651835372636263,
+        "sic_of_identified": 0.9997742153985099,
+        "symbols": 330,
+        "unresolved": 0.0008898776418242492
+      }
+    }
+  },
+  "coverage_all_rows": {
+    "by_period": {
+      "fold_0": {
+        "cik_present": 0.9893132170359893,
+        "identity_contradicted": 0.0014144271570014145,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9893132170359893,
+        "market_cap_of_identified": 0.835186656076251,
+        "market_cap_present": 0.8262611975483263,
+        "no_periodic_filings": 0.004007543611504008,
+        "rows": 12726,
+        "shares_of_identified": 0.835186656076251,
+        "shares_present": 0.8262611975483263,
+        "sic_of_identified": 0.9615567911040508,
+        "symbols": 409,
+        "unresolved": 0.0052648121955052645
+      },
+      "fold_1": {
+        "cik_present": 0.9750040577828275,
+        "identity_contradicted": 0.005843207271546827,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9750040577828275,
+        "market_cap_of_identified": 0.8470118195438655,
+        "market_cap_present": 0.8258399610452849,
+        "no_periodic_filings": 0.006167829897743873,
+        "rows": 12322,
+        "shares_of_identified": 0.8470118195438655,
+        "shares_present": 0.8258399610452849,
+        "sic_of_identified": 0.9747794240053271,
+        "symbols": 387,
+        "unresolved": 0.012984905047881837
+      },
+      "fold_2": {
+        "cik_present": 0.9776179702650291,
+        "identity_contradicted": 0.005494505494505495,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9776179702650291,
+        "market_cap_of_identified": 0.8630465327713034,
+        "market_cap_present": 0.8437297996121526,
+        "no_periodic_filings": 0.005090497737556561,
+        "rows": 12376,
+        "shares_of_identified": 0.8630465327713034,
+        "shares_present": 0.8437297996121526,
+        "sic_of_identified": 0.9911562939085875,
+        "symbols": 405,
+        "unresolved": 0.011797026502908856
+      },
+      "fold_3": {
+        "cik_present": 0.9883842025154209,
+        "identity_contradicted": 0.003604902667627974,
+        "identity_partial": 0.0009613073780341264,
+        "identity_trusted": 0.9883842025154209,
+        "market_cap_of_identified": 0.8237964013616469,
+        "market_cap_present": 0.814227349194905,
+        "no_periodic_filings": 0.0040054474084755265,
+        "rows": 12483,
+        "shares_of_identified": 0.8237964013616469,
+        "shares_present": 0.814227349194905,
+        "sic_of_identified": 0.9816826065812936,
+        "symbols": 400,
+        "unresolved": 0.0030441400304414
+      },
+      "fold_4": {
+        "cik_present": 0.9896468699839487,
+        "identity_contradicted": 0.004333868378812199,
+        "identity_partial": 0.00032102728731942215,
+        "identity_trusted": 0.9896468699839487,
+        "market_cap_of_identified": 0.8378071527045657,
+        "market_cap_present": 0.8291332263242376,
+        "no_periodic_filings": 0.0040128410914927765,
+        "rows": 12460,
+        "shares_of_identified": 0.8378071527045657,
+        "shares_present": 0.8291332263242376,
+        "sic_of_identified": 0.9938366718027735,
+        "symbols": 378,
+        "unresolved": 0.0016853932584269663
+      },
+      "fold_5": {
+        "cik_present": 0.9909711863076077,
+        "identity_contradicted": 0.004082594017429536,
+        "identity_partial": 0.0009421370809452775,
+        "identity_trusted": 0.9909711863076077,
+        "market_cap_of_identified": 0.8601647916336556,
+        "market_cap_present": 0.8523985239852399,
+        "no_periodic_filings": 0.00400408259401743,
+        "rows": 12737,
+        "shares_of_identified": 0.8601647916336556,
+        "shares_present": 0.8523985239852399,
+        "sic_of_identified": 0.9954048486769134,
+        "symbols": 386,
+        "unresolved": 0.0
+      },
+      "fold_6": {
+        "cik_present": 0.9887127761767531,
+        "identity_contradicted": 0.006964457252641691,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9887127761767531,
+        "market_cap_of_identified": 0.8672981944781799,
+        "market_cap_present": 0.8575088056356068,
+        "no_periodic_filings": 0.004002561639449248,
+        "rows": 12492,
+        "shares_of_identified": 0.8672981944781799,
+        "shares_present": 0.8575088056356068,
+        "sic_of_identified": 0.9935227916767873,
+        "symbols": 385,
+        "unresolved": 0.0003202049311559398
+      },
+      "fold_7": {
+        "cik_present": 0.9879168301294625,
+        "identity_contradicted": 0.006433895645351118,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9879168301294625,
+        "market_cap_of_identified": 0.8752283377015329,
+        "market_cap_present": 0.864652805021577,
+        "no_periodic_filings": 0.004629266378972146,
+        "rows": 12745,
+        "shares_of_identified": 0.8752283377015329,
+        "shares_present": 0.864652805021577,
+        "sic_of_identified": 0.9965054403939322,
+        "symbols": 415,
+        "unresolved": 0.0010200078462142017
+      },
+      "train_only": {
+        "cik_present": 0.9869579728376678,
+        "identity_contradicted": 0.00012836640907807245,
+        "identity_partial": 0.0002310595363405304,
+        "identity_trusted": 0.9869579728376678,
+        "market_cap_of_identified": 0.8347163332726374,
+        "market_cap_present": 0.8238299401812533,
+        "no_periodic_filings": 0.004133398372313933,
+        "rows": 38951,
+        "shares_of_identified": 0.8347163332726374,
+        "shares_present": 0.8238299401812533,
+        "sic_of_identified": 0.9419920401633587,
+        "symbols": 514,
+        "unresolved": 0.008549202844599625
+      }
+    },
+    "by_year": {
+      "2014": {
+        "cik_present": 0.9869099154813441,
+        "identity_contradicted": 0.0005153576582148011,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9869099154813441,
+        "market_cap_of_identified": 0.8130548302872063,
+        "market_cap_present": 0.8024118738404453,
+        "no_periodic_filings": 0.004019789734075448,
+        "rows": 9702,
+        "shares_of_identified": 0.8130548302872063,
+        "shares_present": 0.8024118738404453,
+        "sic_of_identified": 0.9197911227154048,
+        "symbols": 386,
+        "unresolved": 0.008554937126365698
+      },
+      "2015": {
+        "cik_present": 0.9841587326986159,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9841587326986159,
+        "market_cap_of_identified": 0.8371677099422811,
+        "market_cap_present": 0.8239059124729978,
+        "no_periodic_filings": 0.004400352028162253,
+        "rows": 12499,
+        "shares_of_identified": 0.8371677099422811,
+        "shares_present": 0.8239059124729978,
+        "sic_of_identified": 0.9418746443378587,
+        "symbols": 388,
+        "unresolved": 0.011440915273221858
+      },
+      "2016": {
+        "cik_present": 0.98768,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.00072,
+        "identity_trusted": 0.98768,
+        "market_cap_of_identified": 0.8459420055078568,
+        "market_cap_present": 0.83552,
+        "no_periodic_filings": 0.004,
+        "rows": 12500,
+        "shares_of_identified": 0.8459420055078568,
+        "shares_present": 0.83552,
+        "sic_of_identified": 0.9563421351044873,
+        "symbols": 370,
+        "unresolved": 0.0076
+      },
+      "2017": {
+        "cik_present": 0.9946641556811049,
+        "identity_contradicted": 0.0,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9946641556811049,
+        "market_cap_of_identified": 0.8373303881350583,
+        "market_cap_present": 0.8328625235404896,
+        "no_periodic_filings": 0.004001883239171375,
+        "rows": 12744,
+        "shares_of_identified": 0.8373303881350583,
+        "shares_present": 0.8328625235404896,
+        "sic_of_identified": 0.9566898075102556,
+        "symbols": 400,
+        "unresolved": 0.0013339610797237916
+      },
+      "2018": {
+        "cik_present": 0.9753813867140205,
+        "identity_contradicted": 0.005650173541044475,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9753813867140205,
+        "market_cap_of_identified": 0.843098311817279,
+        "market_cap_present": 0.8223424005165872,
+        "no_periodic_filings": 0.005730890305916539,
+        "rows": 12389,
+        "shares_of_identified": 0.843098311817279,
+        "shares_present": 0.8223424005165872,
+        "sic_of_identified": 0.970374048328368,
+        "symbols": 403,
+        "unresolved": 0.013237549439018484
+      },
+      "2019": {
+        "cik_present": 0.9771172638436482,
+        "identity_contradicted": 0.00513029315960912,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9771172638436482,
+        "market_cap_of_identified": 0.8573214434536212,
+        "market_cap_present": 0.8377035830618893,
+        "no_periodic_filings": 0.005537459283387622,
+        "rows": 12280,
+        "shares_of_identified": 0.8573214434536212,
+        "shares_present": 0.8377035830618893,
+        "sic_of_identified": 0.986165513792816,
+        "symbols": 383,
+        "unresolved": 0.012214983713355049
+      },
+      "2020": {
+        "cik_present": 0.9836091788598385,
+        "identity_contradicted": 0.004637403054289598,
+        "identity_partial": 0.0003997761253697929,
+        "identity_trusted": 0.9836091788598385,
+        "market_cap_of_identified": 0.8466103072671111,
+        "market_cap_present": 0.8327336691452787,
+        "no_periodic_filings": 0.003997761253697929,
+        "rows": 12507,
+        "shares_of_identified": 0.8466103072671111,
+        "shares_present": 0.8327336691452787,
+        "sic_of_identified": 0.9864249715493416,
+        "symbols": 412,
+        "unresolved": 0.007355880706804189
+      },
+      "2021": {
+        "cik_present": 0.9901212753995663,
+        "identity_contradicted": 0.0036141675367440365,
+        "identity_partial": 0.0005622038390490724,
+        "identity_trusted": 0.9901212753995663,
+        "market_cap_of_identified": 0.8170019467878001,
+        "market_cap_present": 0.8089310095574652,
+        "no_periodic_filings": 0.004015741707493374,
+        "rows": 12451,
+        "shares_of_identified": 0.8170019467878001,
+        "shares_present": 0.8089310095574652,
+        "sic_of_identified": 0.9888870863075925,
+        "symbols": 380,
+        "unresolved": 0.0016866115171472172
+      },
+      "2022": {
+        "cik_present": 0.9911254221314694,
+        "identity_contradicted": 0.0036126600172779392,
+        "identity_partial": 0.0012565773973140658,
+        "identity_trusted": 0.9911254221314694,
+        "market_cap_of_identified": 0.8599841521394612,
+        "market_cap_present": 0.8523521558155973,
+        "no_periodic_filings": 0.004005340453938585,
+        "rows": 12733,
+        "shares_of_identified": 0.8599841521394612,
+        "shares_present": 0.8523521558155973,
+        "sic_of_identified": 0.9946117274167987,
+        "symbols": 388,
+        "unresolved": 0.0
+      },
+      "2023": {
+        "cik_present": 0.9895132885046429,
+        "identity_contradicted": 0.006163944924751841,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9895132885046429,
+        "market_cap_of_identified": 0.8661920556589273,
+        "market_cap_present": 0.8571085494716618,
+        "no_periodic_filings": 0.004002561639449248,
+        "rows": 12492,
+        "shares_of_identified": 0.8661920556589273,
+        "shares_present": 0.8571085494716618,
+        "sic_of_identified": 0.9949033249737076,
+        "symbols": 391,
+        "unresolved": 0.0003202049311559398
+      },
+      "2024": {
+        "cik_present": 0.98864,
+        "identity_contradicted": 0.00664,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.98864,
+        "market_cap_of_identified": 0.8702055348761936,
+        "market_cap_present": 0.86032,
+        "no_periodic_filings": 0.004,
+        "rows": 12500,
+        "shares_of_identified": 0.8702055348761936,
+        "shares_present": 0.86032,
+        "sic_of_identified": 0.9937692183201166,
+        "symbols": 392,
+        "unresolved": 0.00072
+      },
+      "2025": {
+        "cik_present": 0.9853170189098999,
+        "identity_contradicted": 0.008008898776418243,
+        "identity_partial": 0.0,
+        "identity_trusted": 0.9853170189098999,
+        "market_cap_of_identified": 0.8780763151953037,
+        "market_cap_present": 0.8651835372636263,
+        "no_periodic_filings": 0.005784204671857619,
+        "rows": 4495,
+        "shares_of_identified": 0.8780763151953037,
+        "shares_present": 0.8651835372636263,
+        "sic_of_identified": 0.9997742153985099,
+        "symbols": 330,
+        "unresolved": 0.0008898776418242492
+      }
+    }
+  },
+  "cutoff": "2025-05-09",
+  "evidence": {
+    "grades": {
+      "A_CONFIRMED": 890,
+      "B_CONSISTENT": 65,
+      "C_PARTIAL": 4,
+      "D_NO_PERIODIC_FILINGS": 5,
+      "UNRESOLVED": 26,
+      "X_CONTRADICTED": 23
+    },
+    "links": 1013,
+    "methods": {
+      "AMBIGUOUS_NAME": 5,
+      "CURRENT_TICKER_MAP": 824,
+      "EXACT_NAME_EVIDENCE": 161,
+      "NONE": 21,
+      "SUCCESSOR_NAME_CONTINUITY": 2
+    },
+    "resolved_tickers": 905,
+    "tickers": 950
+  },
+  "exit_classification": {
+    "APPROXIMATED": 37,
+    "EXACT": 84,
+    "UNKNOWN": 47
+  },
+  "exit_event_types": {
+    "BANKRUPTCY_8K": 2,
+    "DELISTING_FORM_25": 84,
+    "DELISTING_NOTICE_8K": 3,
+    "LAST_PRICE_DATE_ONLY": 21,
+    "MERGER_OR_ACQUISITION_8K": 11,
+    "PRICE_GAP_WINDOW_END": 47
+  },
+  "exit_events": 168,
+  "failures": [],
+  "filer_regime_of_identities": {
+    "DOMESTIC_10K": 866,
+    "FOREIGN_20F_40F": 102,
+    "MIXED": 14
+  },
+  "foreign_identified_name_dates": 6673,
+  "foreign_identified_securities": 74,
+  "french_sic_sha256": {
+    "ff12": "d801141acf039f2e06e6d4d9ba2b3992e9747a1d82fabd53ef21da4a3af79fff",
+    "ff17": "c3b19f0483ca8ed2d701ffaaef4ad6236ef086084374025e4f6e5c0e85e10289",
+    "ff48": "f37edffc024fe7b91b794dd933244430da2de212df2549dc448c0dfcca45d740"
+  },
+  "identity_intervals": 987,
+  "multi_listed_ciks": 25,
+  "multi_listed_securities": 51,
+  "name_intervals": 1827,
+  "neutralization_allowed": false,
+  "security_master_pit": true,
+  "share_tier_security_distribution": {
+    "securities": 765,
+    "with_at_least_90pct_exact": 548,
+    "with_zero_exact": 184
+  },
+  "share_tiers_by_period": {
+    "fold_0": {
+      "exact_cover_page": 0.7904691113313512,
+      "fallback_balance_sheet": 0.036339610175090846,
+      "missing": 0.13156590683845393,
+      "multi_class_summed": 0.0,
+      "name_dates": 12108,
+      "proxy_weighted_average": 0.04162537165510406
+    },
+    "fold_1": {
+      "exact_cover_page": 0.810326751703652,
+      "fallback_balance_sheet": 0.031976236239734404,
+      "missing": 0.11095579241656474,
+      "multi_class_summed": 0.0,
+      "name_dates": 11446,
+      "proxy_weighted_average": 0.046741219640048924
+    },
+    "fold_2": {
+      "exact_cover_page": 0.7938905096962416,
+      "fallback_balance_sheet": 0.04050111549682513,
+      "missing": 0.10399862708083062,
+      "multi_class_summed": 0.0,
+      "name_dates": 11654,
+      "proxy_weighted_average": 0.06160974772610263
+    },
+    "fold_3": {
+      "exact_cover_page": 0.7513140887548471,
+      "fallback_balance_sheet": 0.04532529082292115,
+      "missing": 0.12417061611374408,
+      "multi_class_summed": 0.0,
+      "name_dates": 11605,
+      "proxy_weighted_average": 0.07919000430848772
+    },
+    "fold_4": {
+      "exact_cover_page": 0.7325905292479109,
+      "fallback_balance_sheet": 0.057103064066852366,
+      "missing": 0.10071378830083566,
+      "multi_class_summed": 0.0,
+      "name_dates": 11488,
+      "proxy_weighted_average": 0.10959261838440111
+    },
+    "fold_5": {
+      "exact_cover_page": 0.7659752425560388,
+      "fallback_balance_sheet": 0.052860488457678156,
+      "missing": 0.09192037470725996,
+      "multi_class_summed": 0.0,
+      "name_dates": 11956,
+      "proxy_weighted_average": 0.08924389427902309
+    },
+    "fold_6": {
+      "exact_cover_page": 0.7667574004763525,
+      "fallback_balance_sheet": 0.051633208574345016,
+      "missing": 0.08880571623001021,
+      "multi_class_summed": 0.0,
+      "name_dates": 11756,
+      "proxy_weighted_average": 0.09280367471929228
+    },
+    "fold_7": {
+      "exact_cover_page": 0.7699627637567232,
+      "fallback_balance_sheet": 0.04211832850641291,
+      "missing": 0.08812577575506826,
+      "multi_class_summed": 0.0,
+      "name_dates": 12085,
+      "proxy_weighted_average": 0.09979313198179561
+    },
+    "train_only": {
+      "exact_cover_page": 0.7967930506993007,
+      "fallback_balance_sheet": 0.033380681818181816,
+      "missing": 0.12344296328671328,
+      "multi_class_summed": 0.0,
+      "name_dates": 36608,
+      "proxy_weighted_average": 0.04638330419580419
+    }
+  },
+  "share_tiers_by_year": {
+    "2014": {
+      "exact_cover_page": 0.7920492721164614,
+      "fallback_balance_sheet": 0.031914893617021274,
+      "missing": 0.1282194848824188,
+      "multi_class_summed": 0.0,
+      "name_dates": 8930,
+      "proxy_weighted_average": 0.047816349384098546
+    },
+    "2015": {
+      "exact_cover_page": 0.7996092422697927,
+      "fallback_balance_sheet": 0.03287461773700306,
+      "missing": 0.12521236833163438,
+      "multi_class_summed": 0.0,
+      "name_dates": 11772,
+      "proxy_weighted_average": 0.042303771661569824
+    },
+    "2016": {
+      "exact_cover_page": 0.7979576335555744,
+      "fallback_balance_sheet": 0.03333614651025403,
+      "missing": 0.11857540720735928,
+      "multi_class_summed": 0.0,
+      "name_dates": 11849,
+      "proxy_weighted_average": 0.05013081272681239
+    },
+    "2017": {
+      "exact_cover_page": 0.7915640899392746,
+      "fallback_balance_sheet": 0.03774823568028886,
+      "missing": 0.12900049236829148,
+      "multi_class_summed": 0.0,
+      "name_dates": 12186,
+      "proxy_weighted_average": 0.04168718201214509
+    },
+    "2018": {
+      "exact_cover_page": 0.8078390565383281,
+      "fallback_balance_sheet": 0.03191120360735345,
+      "missing": 0.11654526534859522,
+      "multi_class_summed": 0.0,
+      "name_dates": 11532,
+      "proxy_weighted_average": 0.043704474505723206
+    },
+    "2019": {
+      "exact_cover_page": 0.7942604473729842,
+      "fallback_balance_sheet": 0.03927518640541009,
+      "missing": 0.10811513785330328,
+      "multi_class_summed": 0.0,
+      "name_dates": 11534,
+      "proxy_weighted_average": 0.05834922836830241
+    },
+    "2020": {
+      "exact_cover_page": 0.7759618658495063,
+      "fallback_balance_sheet": 0.03992168879809329,
+      "missing": 0.11346612189308819,
+      "multi_class_summed": 0.0,
+      "name_dates": 11748,
+      "proxy_weighted_average": 0.07065032345931223
+    },
+    "2021": {
+      "exact_cover_page": 0.7271769662921348,
+      "fallback_balance_sheet": 0.055126404494382025,
+      "missing": 0.11587078651685394,
+      "multi_class_summed": 0.0,
+      "name_dates": 11392,
+      "proxy_weighted_average": 0.10182584269662921
+    },
+    "2022": {
+      "exact_cover_page": 0.7583977158212966,
+      "fallback_balance_sheet": 0.05382935841451125,
+      "missing": 0.08859590191467921,
+      "multi_class_summed": 0.0,
+      "name_dates": 11908,
+      "proxy_weighted_average": 0.09917702384951294
+    },
+    "2023": {
+      "exact_cover_page": 0.765595784463709,
+      "fallback_balance_sheet": 0.054309026007139216,
+      "missing": 0.09000509943906171,
+      "multi_class_summed": 0.0,
+      "name_dates": 11766,
+      "proxy_weighted_average": 0.09009009009009009
+    },
+    "2024": {
+      "exact_cover_page": 0.7705346601450498,
+      "fallback_balance_sheet": 0.04579187046719514,
+      "missing": 0.09310170349131389,
+      "multi_class_summed": 0.0,
+      "name_dates": 11858,
+      "proxy_weighted_average": 0.09057176589644123
+    },
+    "2025": {
+      "exact_cover_page": 0.7655400614511936,
+      "fallback_balance_sheet": 0.03828882060978492,
+      "missing": 0.08083195462065705,
+      "multi_class_summed": 0.0,
+      "name_dates": 4231,
+      "proxy_weighted_average": 0.11533916331836445
+    }
+  },
+  "shares_by_basis": {
+    "BALANCE_SHEET": 45135,
+    "DEI_COVER": 33071,
+    "WEIGHTED_AVG_PROXY": 69554
+  },
+  "shares_vintages": 147760,
+  "size_features_allowed": false,
+  "size_gate_population": "identified domestic name-dates (definition D3); the all-identified figure is kept beside it",
+  "succession_links": 2,
+  "thresholds": {
+    "identity_contradicted_share_max": 0.02,
+    "identity_trusted_share_min_each_validation_fold": 0.95,
+    "identity_trusted_share_min_each_year_from_2015": 0.95,
+    "note": "shares / market-cap coverage gate size-dependent features and neutralisation separately (>= 0.90 in every fold)",
+    "sic_share_of_identified_min": 0.95,
+    "size_feature_share_min_each_validation_fold": 0.9
+  },
+  "ticker_reuse_review": {
+    "AA": [
+      {
+        "cik": 1675149,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1675149,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2016-10-18",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "ABX": [
+      {
+        "cik": 1814287,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2018-09-07",
+          "2018-12-31"
+        ]
+      }
+    ],
+    "ACB": [
+      {
+        "cik": 1683541,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-07-11",
+          "2014-07-11"
+        ]
+      },
+      {
+        "cik": 1683541,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-01",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "AI": [
+      {
+        "cik": 1577526,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2021-03-02 is well after the window start 2018-01-16",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "AMTD": [
+      {
+        "cik": 1769731,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2020-05-05 is well after the window start 2018-01-16",
+        "window": [
+          "2018-01-16",
+          "2020-10-05"
+        ]
+      },
+      {
+        "cik": 1769731,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2022-02-01",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "APO": [
+      {
+        "cik": 1858681,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2022-05-10 is well after the window start 2018-01-16",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "AXON": [
+      {
+        "cik": 1069183,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1069183,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-02-01",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "BBWI": [
+      {
+        "cik": 701985,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 701985,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 701985,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-08-09",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "BLNK": [
+      {
+        "cik": 1429764,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2014-07-11"
+        ]
+      },
+      {
+        "cik": 1429764,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "CCEP": [
+      {
+        "cik": 1650107,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1650107,
+        "grade": "C_PARTIAL",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2018-03-15 is well after the window start 2016-05-31",
+        "window": [
+          "2016-05-31",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "CDK": [
+      {
+        "cik": 1609702,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-17",
+          "2012-05-03"
+        ]
+      },
+      {
+        "cik": 1609702,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-10-01",
+          "2022-07-05"
+        ]
+      }
+    ],
+    "CELH": [
+      {
+        "cik": 1341766,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2014-07-11"
+        ]
+      },
+      {
+        "cik": 1341766,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2017-05-24",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "CGC": [
+      {
+        "cik": 1737927,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-05-23",
+          "2014-07-11"
+        ]
+      },
+      {
+        "cik": 1737927,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "CHTR": [
+      {
+        "cik": 1091667,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1091667,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2016-05-03",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "CLSK": [
+      {
+        "cik": 827876,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-07-18",
+          "2013-04-18"
+        ]
+      },
+      {
+        "cik": 827876,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-07-09",
+          "2014-07-09"
+        ]
+      },
+      {
+        "cik": 827876,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-01-27",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "COR": [
+      {
+        "cik": 1140859,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2022-08-15"
+        ]
+      },
+      {
+        "cik": 1140859,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2023-08-30",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "COUP": [
+      {
+        "cik": 1385867,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1385867,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2016-10-06",
+          "2023-02-27"
+        ]
+      }
+    ],
+    "CTRA": [
+      {
+        "cik": 858470,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2015-12-31"
+        ]
+      },
+      {
+        "cik": 858470,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "DKNG": [
+      {
+        "cik": 1772757,
+        "grade": "B_CONSISTENT",
+        "method": "SUCCESSOR_NAME_CONTINUITY",
+        "reason": "predecessor CIK with the same issuer name; successor CIK 1883685 first files 2022-05-06",
+        "window": [
+          "2020-04-27",
+          "2022-05-05"
+        ]
+      },
+      {
+        "cik": 1883685,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2022-05-06",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "ECVT": [
+      {
+        "cik": 1708035,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2017-09-29",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 1708035,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1708035,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-08-09",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "ELV": [
+      {
+        "cik": 1156039,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1156039,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2022-07-05",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "FERG": [
+      {
+        "cik": 2011641,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2024-09-25 is well after the window start 2022-05-13",
+        "window": [
+          "2022-05-13",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "FI": [
+      {
+        "cik": 798354,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-07-01",
+          "2021-10-01"
+        ]
+      },
+      {
+        "cik": 798354,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2023-06-07",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "FTI": [
+      {
+        "cik": 1681459,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1681459,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2017-01-17",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "FUBO": [
+      {
+        "cik": 1484769,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2013-04-05",
+          "2013-04-30"
+        ]
+      },
+      {
+        "cik": 1484769,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-07-08",
+          "2014-07-10"
+        ]
+      },
+      {
+        "cik": 1484769,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-10-12",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "GLOG": [
+      {
+        "cik": 1534126,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing 2018-02-28 is well after the window start 2012-03-30",
+        "window": [
+          "2012-03-30",
+          "2021-06-08"
+        ]
+      }
+    ],
+    "GOOG": [
+      {
+        "cik": 1652044,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1652044,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2015-10-05",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "GRUB": [
+      {
+        "cik": 1792627,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing 2022-03-02 is well after the window start 2018-01-16",
+        "window": [
+          "2018-01-16",
+          "2022-03-11"
+        ]
+      }
+    ],
+    "GWPH": [
+      {
+        "cik": 1351288,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing 2018-11-28 is well after the window start 2013-05-02",
+        "window": [
+          "2013-05-02",
+          "2021-05-04"
+        ]
+      }
+    ],
+    "HUBB": [
+      {
+        "cik": 48898,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2014-09-26"
+        ]
+      },
+      {
+        "cik": 48898,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2015-12-24",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "HWM": [
+      {
+        "cik": 4281,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 4281,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 4281,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-04-06",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "IAC": [
+      {
+        "cik": 1800227,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing 2020-06-03 is well after the window start 2018-01-16",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "KKR": [
+      {
+        "cik": 1404912,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-10-07",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1404912,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-01-16",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "LB": [
+      {
+        "cik": 1995807,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2012-01-03",
+          "2021-08-02"
+        ]
+      },
+      {
+        "cik": 1995807,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2024-06-28",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "LK": [
+      {
+        "cik": 1767582,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2019-05-20",
+          "2020-06-26"
+        ]
+      }
+    ],
+    "LUMN": [
+      {
+        "cik": 18926,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 18926,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 18926,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-09-21",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "META": [
+      {
+        "cik": 1326801,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1326801,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-07-06",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "MNST": [
+      {
+        "cik": 865752,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-17",
+          "2012-05-03"
+        ]
+      },
+      {
+        "cik": 865752,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "NKLA": [
+      {
+        "cik": 1731289,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2018-11-05"
+        ]
+      },
+      {
+        "cik": 1731289,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-06-08",
+          "2025-02-25"
+        ]
+      }
+    ],
+    "NLOK": [
+      {
+        "cik": 849399,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-04-13"
+        ]
+      },
+      {
+        "cik": 849399,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2019-11-11",
+          "2022-11-07"
+        ]
+      }
+    ],
+    "OVV": [
+      {
+        "cik": 1792580,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 1792580,
+        "grade": "C_PARTIAL",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2020-02-21 is well after the window start 2018-11-02",
+        "window": [
+          "2018-11-02",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "PARA": [
+      {
+        "cik": 1826011,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1826011,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2022-02-22",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "PX": [
+      {
+        "cik": 1841968,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2018-09-07",
+          "2018-10-30"
+        ]
+      },
+      {
+        "cik": 1841968,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-10-25",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "QUBT": [
+      {
+        "cik": 1758009,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 1758009,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2019-06-13",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1758009,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-07-19",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "RTX": [
+      {
+        "cik": 101829,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 101829,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 101829,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-04-06",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "SBAC": [
+      {
+        "cik": 1034054,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1034054,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2017-01-17",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "SE": [
+      {
+        "cik": 1703399,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1703399,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2017-10-20",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "SMCI": [
+      {
+        "cik": 1375365,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 1375365,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-01-21",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "SOJD": [
+      {
+        "cik": 92122,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2020-01-21",
+          "2020-11-27"
+        ]
+      },
+      {
+        "cik": 92122,
+        "grade": "B_CONSISTENT",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window; no independent name match",
+        "window": [
+          "2022-11-18",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "SPWR": [
+      {
+        "cik": 1838987,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2024-08-15"
+        ]
+      },
+      {
+        "cik": 1838987,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2025-04-28",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "STI": [
+      {
+        "cik": 1881551,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing is after the ticker's window ended",
+        "window": [
+          "2018-01-16",
+          "2019-12-06"
+        ]
+      },
+      {
+        "cik": 1881551,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2024-02-05",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "TEAM": [
+      {
+        "cik": 1650372,
+        "grade": "X_CONTRADICTED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "first filing 2018-08-30 is well after the window start 2015-12-10",
+        "window": [
+          "2015-12-10",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "TFC": [
+      {
+        "cik": 92230,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 92230,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "TT": [
+      {
+        "cik": 1466258,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 1466258,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 1466258,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-03-02",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "TTE": [
+      {
+        "cik": 879764,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 879764,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2019-06-13"
+        ]
+      },
+      {
+        "cik": 879764,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2021-06-14",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "ULTA": [
+      {
+        "cik": 1403568,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1403568,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2017-01-30",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "VIAC": [
+      {
+        "cik": 813828,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 813828,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2019-12-09",
+          "2022-02-16"
+        ]
+      }
+    ],
+    "VJET": [
+      {
+        "cik": 1582581,
+        "grade": "X_CONTRADICTED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "first filing 2018-03-29 is well after the window start 2013-10-18",
+        "window": [
+          "2013-10-18",
+          "2024-03-22"
+        ]
+      }
+    ],
+    "WKHS": [
+      {
+        "cik": 1425287,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2014-07-11"
+        ]
+      },
+      {
+        "cik": 1425287,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2016-01-07",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "WW": [
+      {
+        "cik": 105319,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-03",
+          "2018-01-12"
+        ]
+      },
+      {
+        "cik": 105319,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-11-02",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "XL": [
+      {
+        "cik": 1772720,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2018-09-07",
+          "2018-09-11"
+        ]
+      },
+      {
+        "cik": 1772720,
+        "grade": "A_CONFIRMED",
+        "method": "EXACT_NAME_EVIDENCE",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2020-12-28",
+          "2022-11-11"
+        ]
+      }
+    ],
+    "XRX": [
+      {
+        "cik": 108772,
+        "grade": "B_CONSISTENT",
+        "method": "SUCCESSOR_NAME_CONTINUITY",
+        "reason": "predecessor CIK with the same issuer name; successor CIK 1770450 first files 2019-11-06",
+        "window": [
+          "2018-01-16",
+          "2019-11-05"
+        ]
+      },
+      {
+        "cik": 1770450,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2019-11-06",
+          "2025-05-09"
+        ]
+      }
+    ],
+    "Z": [
+      {
+        "cik": 1617640,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2012-01-17",
+          "2012-05-03"
+        ]
+      },
+      {
+        "cik": 1617640,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2014-09-08",
+          "2014-10-16"
+        ]
+      },
+      {
+        "cik": 1617640,
+        "grade": "A_CONFIRMED",
+        "method": "CURRENT_TICKER_MAP",
+        "reason": "filings span the window and a filing-time name matches",
+        "window": [
+          "2015-08-17",
+          "2025-05-09"
+        ]
+      }
+    ]
+  },
+  "universe_symbols": 950,
+  "unresolved_list": [
+    "AABA",
+    "AUY",
+    "BA$A",
+    "BBBY",
+    "BBL",
+    "BDXB",
+    "BHGE",
+    "CLR",
+    "DGAZ",
+    "DIDI",
+    "EQC",
+    "EQR",
+    "FNGA",
+    "HDS",
+    "HPE$C",
+    "ICCT",
+    "PSTG",
+    "RDS.A",
+    "RDS.B",
+    "SKX",
+    "SMLP",
+    "TTM",
+    "TVIX",
+    "UGAZ",
+    "VXXB",
+    "WLTW"
+  ],
+  "unresolved_tickers": 26,
+  "version": "security-master-v4"
+}

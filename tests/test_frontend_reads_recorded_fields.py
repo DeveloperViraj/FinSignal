@@ -1,0 +1,231 @@
+"""The frontend must read fields the payloads actually carry.
+
+Four bugs of one family shipped and were caught by looking at rendered pages,
+not by any test:
+
+  the timeline read `status` and `note` on a status-history row that records
+  `from`, `to` and `reason` — every transition rendered "status → undefined"
+
+  the market index table read `change` on a row that records `change_1d` and
+  `change_1w` — every index showed an em dash where its move belongs
+
+  the breadth chart read `value` on a series of `{date, score}` — ninety days
+  of history were discarded and the panel said "no observations"
+
+  the providers workspace treated a map of capability-to-vendor-list as a flat
+  vendor map — its column headers became the payload's own top-level keys, its
+  rows became array indices, and every cell an em dash
+
+Each was well-formed TypeScript reading a field that was never there. The type
+declaration was the bug, so the type system could not help; only the payload
+can settle it.
+
+These pin the field names for the surfaces whose payloads are cheap to fetch.
+They are not exhaustive, and they are not meant to be — they hold the four that
+broke, so the fifth has to be a new mistake.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from api.index import app
+
+ROOT = Path(__file__).resolve().parents[1]
+UI = ROOT / "dashboard" / "src" / "components" / "terminal"
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _keys(rows: object) -> set[str]:
+    if isinstance(rows, dict):
+        return set(rows)
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return set(rows[0])
+    return set()
+
+
+def test_provider_health_is_nested_by_capability(client: TestClient) -> None:
+    """The shape the workspace was rewritten against."""
+    payload = client.get("/api/providers/health").json()
+    providers = payload.get("providers")
+    assert isinstance(providers, dict), "provider health is no longer keyed by capability"
+    assert providers, "no capabilities reported"
+
+    for capability, vendors in providers.items():
+        assert isinstance(vendors, list), (
+            f"{capability} is not a list of vendors. The workspace iterates it as one; "
+            f"treating a list as a vendor object is what produced array indices as row ids."
+        )
+
+    sample = next(iter(providers.values()))[0]
+    for field in ("vendor", "configured", "cooling_down", "requests", "failures",
+                  "rate_limited", "success_pct", "avg_latency_ms", "last_error"):
+        assert field in sample, f"provider health no longer reports {field!r}"
+
+
+def test_the_providers_workspace_reads_those_fields() -> None:
+    # The workspace reads the snapshot itself; its states come from the shared
+    # classifier, which is where the cooldown and rate-limit fields are read.
+    # The console maps each registry record onto the same snapshot shape
+    # (`toSnapshot`) before classifying it, and the status bar reads the health
+    # endpoint directly, so the fields must still be read by name.
+    source = (UI / "providers" / "ProviderConsole.tsx").read_text() + (
+        UI.parents[1] / "lib" / "providerRegistry.ts"
+    ).read_text() + (UI.parents[1] / "lib" / "providerHealth.ts").read_text()
+    for field in ("vendor", "configured", "cooling_down", "requests", "failures",
+                  "rate_limited", "avg_latency_ms", "last_error"):
+        assert any(f"{prefix}.{field}" in source for prefix in ("v", "snap")) or f"{field}:" in source, (
+            f"the providers workspace no longer reads {field!r}"
+        )
+    # The fields it used to invent.
+    for ghost in ("e.healthy", "e.calls", "e.cooldown_seconds"):
+        assert ghost not in source, f"{ghost} is not a field provider health carries"
+
+
+def test_the_registry_carries_what_the_providers_console_reads(client: TestClient) -> None:
+    """The console's types (`lib/providerRegistry.ts`) against the payload itself.
+
+    The registry is assembled on the server from three sources; a renamed key in
+    any of them would otherwise reach the page as an empty column.
+    """
+    payload = client.get("/api/providers/registry").json()
+    for key in ("generated_at", "process_started_at", "health_window_seconds", "providers", "capabilities", "disabled"):
+        assert key in payload, f"the registry no longer reports {key!r}"
+    provider = payload["providers"][0]
+    for key in ("id", "display_name", "domain", "capabilities", "instances", "configuration",
+                "policy", "health", "recent", "terms", "advisories"):
+        assert key in provider, f"a registry record no longer carries {key!r}"
+    for key in ("credential_env", "keyless", "configured", "disabled", "credential_state", "optional_env"):
+        assert key in provider["configuration"], key
+    for key in ("state", "requests", "failures", "success_pct", "avg_latency_ms", "max_latency_ms",
+                "last_success_at", "last_failure_class", "last_error", "window", "cooling_down"):
+        assert key in provider["health"], key
+    assert {"ok", "failed", "declined"} <= set(provider["health"]["window"])
+    capability = payload["capabilities"][0]
+    for key in ("key", "label", "description", "reconciliation", "implemented_by", "eligible"):
+        assert key in capability, key
+    source = (UI.parents[1] / "lib" / "providerRegistry.ts").read_text()
+    for name in ("health_window_seconds", "process_started_at", "credential_state", "implemented_by", "eligible"):
+        assert name in source, f"the console no longer reads {name!r}"
+
+
+def test_breadth_history_is_date_and_score(client: TestClient, offline_network, synthetic_series) -> None:
+    """Pinned against a fixed market, not whatever the vendors answer today.
+
+    This read the live dashboard and skipped when the history was missing, so
+    on any machine that could not reach the vendors — CI, a laptop offline —
+    it skipped and held nothing. It now builds the dashboard from a
+    deterministic series and requires a history to exist.
+    """
+    from unittest.mock import patch
+
+    from src.services import dashboard_service as ds
+
+    ds.reset_for_tests()
+    try:
+        with patch.object(
+            ds.providers.market_data, "get_series",
+            side_effect=lambda symbol, period="1y": synthetic_series(symbol),
+        ):
+            payload = client.get("/api/dashboard").json()
+    finally:
+        ds.reset_for_tests()
+    history = (payload.get("breadth") or {}).get("history")
+    assert isinstance(history, list) and history and isinstance(history[0], dict), (
+        "the dashboard built from a full market carries no breadth history"
+    )
+    assert _keys(history) >= {"date", "score"}, (
+        "breadth history no longer carries date and score; the market workspace "
+        "reads both, and reading `value` there discarded the whole series once"
+    )
+
+
+def test_the_market_workspace_reads_score_not_value() -> None:
+    source = (UI / "market" / "MarketWorkspace.tsx").read_text()
+    assert "p.score" in source, "the breadth chart no longer reads `score`"
+    assert "date: string; value: number" not in source, (
+        "the breadth series is declared as {date, value} again, which is the "
+        "declaration that discarded ninety days of history"
+    )
+
+
+def test_the_market_index_table_reads_the_recorded_change_fields() -> None:
+    source = (UI / "market" / "MarketWorkspace.tsx").read_text()
+    assert "i.change_1d" in source, "the index table no longer reads change_1d"
+    assert "n(i.change)" not in source, (
+        "the index table reads `change`, which the dashboard payload does not carry"
+    )
+
+
+def test_the_timeline_reads_transitions_not_a_status_field() -> None:
+    source = (UI / "timeline" / "ResearchTimeline.tsx").read_text()
+    assert "h.to" in source and "h.reason" in source, (
+        "the timeline no longer reads the recorded transition fields"
+    )
+    assert "h.status" not in source and "h.note" not in source, (
+        "the timeline reads `status`/`note`, which a status-history row does not "
+        "carry — that rendered every transition as 'status → undefined'"
+    )
+
+
+def test_filings_arrive_as_an_envelope_not_an_array(client: TestClient, offline_network, synthetic_series) -> None:
+    """The fifth wrong-field bug, and the one that hid best.
+
+    EDGAR's adapter returns an object — the documents under a `filings` key,
+    beside `by_form`, `latest` and `source`. The panel declared it as a bare
+    array, so `.length` read undefined on an object and the section never
+    rendered at all.
+
+    It briefly looked correct: a probe counting `len(filings)` on the dict
+    returned seven, which was its key count rather than a number of documents.
+    """
+    from unittest.mock import patch
+
+    import api.index as api_module
+    from src.providers.fabric import Evidence
+
+    # Three recent filings, as the EDGAR adapter returns them. The envelope is
+    # built by the research route from these rows, which is the thing pinned;
+    # this used to fetch AAPL's real filings and skip when none came back.
+    rows = [
+        {"form": "10-K", "filed": "2025-10-31", "accession": "0000320193-25-000079",
+         "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/"},
+        {"form": "10-Q", "filed": "2025-08-01", "accession": "0000320193-25-000073",
+         "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000073/"},
+        {"form": "10-Q", "filed": "2025-05-02", "accession": "0000320193-25-000057",
+         "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000057/"},
+    ]
+    evidence = [Evidence(provider="sec", capability="filings", symbol="AAPL", ok=True, data=rows)]
+    with patch.object(api_module.providers.market_data, "get_series", return_value=synthetic_series("AAPL")), \
+            patch.object(api_module.providers.filings, "filings_evidence", return_value=evidence):
+        payload = client.get("/api/research/AAPL?fast=true").json()
+    filings = payload.get("filings")
+    assert filings is not None, "the research route dropped the filings it was given"
+
+    assert isinstance(filings, dict), (
+        "filings is no longer an envelope; the security panel reads .filings "
+        "off an object and would break"
+    )
+    assert isinstance(filings.get("filings"), list), "the documents are not under `filings`"
+
+
+def test_the_filings_panels_read_the_envelope() -> None:
+    """The consumer half of the envelope contract, checked without a network call."""
+    company = UI.parents[0] / "company"
+    tabs = (company / "tabs" / "Detail.tsx").read_text()
+    assert "a.filings.filings.length" in tabs, "the filings tab no longer reads the documents out of the envelope"
+    panel = (company / "Filings.tsx").read_text()
+    assert "block.filings" in panel and "block.by_form" in panel, (
+        "the filings panel no longer reads the envelope's documents and form counts"
+    )
+    for path in (company / "tabs" / "Detail.tsx", company / "Filings.tsx", company / "Activity.tsx"):
+        assert "filings ?? [])" not in path.read_text().replace("a.filings?.filings ?? [])", ""), (
+            f"{path.name} treats the envelope as an array again, which renders nothing"
+        )

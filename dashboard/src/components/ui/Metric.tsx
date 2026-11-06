@@ -10,10 +10,10 @@ interface MetricProps {
 }
 
 const TONE_COLOR: Record<Tone, string> = {
-  pos: 'var(--pos)',
-  neg: 'var(--neg)',
-  warn: 'var(--warn)',
-  neutral: 'var(--text)',
+  pos: 'var(--e-pos)',
+  neg: 'var(--e-neg)',
+  warn: 'var(--e-warn)',
+  neutral: 'var(--ink)',
 }
 
 /**
@@ -25,23 +25,23 @@ const TONE_COLOR: Record<Tone, string> = {
 export default function Metric({ label, value, unit, tone = 'neutral', size = 'md', change }: MetricProps) {
   return (
     <div>
-      <div className="label" style={{ fontSize: '0.625rem', marginBottom: 4 }}>{label}</div>
+      <div className="sys-label" style={{ marginBottom: 4 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
         <span
           className="num"
           style={{
             fontSize: size === 'lg' ? 'clamp(1.375rem, 2.6vw, 2rem)' : '1.25rem',
-            fontWeight: 650,
+            fontWeight: 600,
             color: TONE_COLOR[tone],
             lineHeight: 1.1,
           }}
         >
           {value}
         </span>
-        {unit && <span style={{ fontSize: '0.75rem', color: 'var(--faint)' }}>{unit}</span>}
+        {unit && <span style={{ fontSize: 'var(--t-small)', color: 'var(--ink-faint)' }}>{unit}</span>}
       </div>
       {change && (
-        <div className="num" style={{ fontSize: '0.6875rem', color: 'var(--muted)', marginTop: 3 }}>
+        <div className="num" style={{ fontSize: 'var(--t-meta)', color: 'var(--ink-muted)', marginTop: 4 }}>
           {change}
         </div>
       )}

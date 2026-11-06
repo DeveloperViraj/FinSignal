@@ -1,0 +1,305 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   FinSignal design tokens — the single source of truth.
+
+   "Nocturne": deep ink-navy surfaces with a faint indigo cast, one violet
+   signal accent, and light used the way a good instrument uses it — a soft
+   ambient glow behind the page, a hairline highlight on the top edge of a
+   raised surface, a glow under the one primary action. Depth tells a reader
+   what sits above what; it never decorates data.
+
+   Colour still carries meaning, and the accent never collides with it:
+     violet  interaction · selection · focus · brand (never a data state)
+     green   positive · verified · healthy
+     red     negative · failure · high risk
+     amber   partial · degraded · stale · uncertain · warning
+     slate   unavailable · secondary · metadata
+   A value is read from these and from its sign, never from colour alone;
+   each clears 4.5:1 on every surface it sits on (tests/contrast.test.ts).
+
+   Older components still reference the legacy names (--bg, --text, --muted,
+   --line, --surface…). They are aliases in globals.css, so every surface in
+   the product resolves to the same values.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces — ink-navy, each step a little lighter as it rises */
+  --p-base: #07080f;
+  --p-chrome: #0a0c17;
+  --p-panel: #0d1020;
+  --p-raised: #121629;
+  --p-sunken: #05060b;
+  --p-hover: #171c33;
+  --p-overlay: #10142a;
+  --p-inverse: #eceef8;
+
+  /* Rules */
+  --rule: #1b2036;
+  --rule-strong: #283050;
+  --rule-focus: #a596ff;
+  /* The outline of a control whose boundary is what identifies it (a text
+     field, a checkbox): 3:1 against every surface, where --rule-strong is a
+     separator and sits near 1.4:1. */
+  --rule-control: #6f7898;
+
+  /* Ink */
+  --ink: #eceef8;
+  --ink-muted: #a9b0c9;
+  --ink-faint: #8f97b3;
+  --ink-disabled: #4a5170;
+
+  /* Interaction: one violet signal */
+  --accent: #a596ff;
+  --accent-strong: #c9c0ff;
+  --accent-wash: rgb(165 150 255 / 0.1);
+  /* Text on an accent fill: the panel colour, which is dark in the dark theme
+     and white in the light one, so it clears 4.5:1 on the accent in both. */
+  --on-accent: var(--p-panel);
+  --accent-line: rgb(165 150 255 / 0.42);
+
+  /* The fill of the one primary action: a violet-to-indigo signal gradient,
+     white text at 4.5:1 or better across the whole sweep. */
+  --grad-signal: linear-gradient(135deg, #7357ff 0%, #5b4cf0 55%, #4a55ea 100%);
+  --grad-signal-soft: linear-gradient(135deg, rgb(115 87 255 / 0.16), rgb(74 85 234 / 0.08));
+  --grad-edge: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0) 42%);
+  /* Display emphasis: headline words set in light, not in a second face. */
+  --grad-brand: linear-gradient(100deg, #d9d2ff 0%, #a596ff 42%, #7d9bff 100%);
+  /* Text on the signature fill. */
+  --on-signal: #ffffff;
+  --glow-cyan: 0 0 0 1px rgb(165 150 255 / 0.28);
+  --glow-signal: 0 10px 30px -10px rgb(115 87 255 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.18);
+  --glass: rgb(13 16 32 / 0.72);
+  --glass-chrome: rgb(7 8 15 / 0.7);
+  --glass-edge: rgb(255 255 255 / 0.07);
+  /* Ambient light behind the page: violet, indigo and a trace of the
+     positive green, never strong enough to tint a figure. */
+  --aurora-1: rgb(115 87 255 / 0.2);
+  --aurora-2: rgb(74 110 255 / 0.13);
+  --aurora-3: rgb(62 207 142 / 0.06);
+  --grid-line: rgb(165 175 230 / 0.05);
+
+  /* Semantic */
+  --e-pos: #3ecf8e;
+  --e-neg: #ff6b6b;
+  --e-warn: #f2b552;
+  --e-null: #8d93a8;
+  --e-info: var(--ink-muted);
+  --e-pos-wash: rgb(62 207 142 / 0.1);
+  --e-neg-wash: rgb(255 107 107 / 0.1);
+  --e-warn-wash: rgb(242 181 82 / 0.1);
+
+  /* Research state → colour. Governance "blocked" is a constraint, not a
+     failure, so it is amber; only failures are red. */
+  --s-live: var(--e-pos);
+  --s-production: var(--e-pos);
+  --s-recorded: var(--ink-muted);
+  --s-stale: var(--e-warn);
+  --s-waking: var(--ink-muted);
+  --s-unavailable: var(--e-null);
+  --s-blocked: var(--e-warn);
+  --s-experimental: var(--accent);
+  --s-candidate: var(--ink-muted);
+  --s-unknown: var(--ink-disabled);
+  --s-retired: var(--ink-faint);
+  --s-paper: var(--e-warn);
+  --s-error: var(--e-neg);
+  --s-warning: var(--e-warn);
+  --s-info: var(--ink-muted);
+
+  /* Type */
+  --font-sans: 'Inter Variable', -apple-system, 'Segoe UI', sans-serif;
+  /* Headlines and page titles: a geometric display face. Interface text,
+     tables and figures stay in Inter. */
+  --font-display: 'Sora Variable', 'Inter Variable', -apple-system, 'Segoe UI', sans-serif;
+  /* The figures face. Numbers are set in the sans with tabular, slashed-zero
+     figures, so a column aligns without the typewriter texture of a
+     monospace. Code-like strings keep a true monospace (--font-code). */
+  --font-mono: 'Inter Variable', -apple-system, 'Segoe UI', sans-serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-serif: 'Newsreader Variable', Georgia, 'Times New Roman', serif;
+
+  --t-micro: 10px;
+  --t-meta: 11px;
+  --t-label: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-body-lg: 14px;
+  --t-value: 15px;
+  --t-base: 16px;   /* reading size; inputs stay >= 16px so iOS does not zoom on focus */
+  --t-lead: 17px;
+  --t-title: 20px;
+  --t-display: 24px;
+  --t-figure: 28px;
+
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
+  --lh-read: 1.65;
+
+  --tracking-label: 0.04em;     /* small uppercase labels */
+  --tracking-eyebrow: 0.08em;   /* tracked eyebrows and tags */
+  --tracking-display: -0.022em;
+  --tracking-figure: -0.02em;
+
+  /* Space — a 4px base */
+  --d-0: 0px;
+  --d-1: 4px;
+  --d-2: 8px;
+  --d-3: 12px;
+  --d-4: 16px;
+  --d-5: 24px;
+  --d-6: 32px;
+  --d-7: 48px;
+  /* The rhythm between sibling blocks. */
+  --gap: var(--d-4);
+
+  /* Breakpoints. A custom property cannot be used inside @media, so the ladder
+     is written here and held by tests/breakpoints.test.ts: a width query must
+     use one of these values, and two may not sit within 30px of each other.
+
+     Layout tiers - where the page's structure changes:
+       640   phone    : the shell drops its brand name and search text, the
+                        workspace header stacks
+       760   tablet   : workspace grids go to one column
+       1023  compact  : the navigation rail becomes an overlay
+       1280  wide     : density and the signal grid tighten
+
+     Content thresholds - where one component's own content stops fitting:
+       480   the dashboard hero's metric strip
+       560   four-up grids drop to two, trail items stack
+       720   the marketing nav becomes a menu; the experiment filter bar wraps
+       860   the market band, object facts and result tables reflow
+       900   the market map and mover sparklines
+       980   the main/side grids and the report columns collapse
+       1100  the landing hero, pipeline and architecture diagram
+       1180  the company workspace grids
+
+     Add a value only for a content reason, here and in the test together. */
+
+  /* Stacking layers, lowest to highest. Anything above 3 is a layer of the
+     page and takes a name from here; 0 to 3 is local stacking inside one
+     component (a sticky table head over its rows) and may stay a number. */
+  --z-tabs: 15;
+  --z-shell-scrim: 19;
+  --z-rail: 20;
+  --z-top: 30;
+  --z-nav: 40;
+  --z-header: 50;
+  --z-tooltip: 70;
+  --z-drawer-scrim: 99;
+  --z-drawer: 100;
+  --z-dialog: 100;
+  --z-menu: 140;
+  --z-toast: 150;
+  --z-overlay: 200;
+
+  --row-compact: 24px;
+  --row-normal: 30px;
+  --row-relaxed: 36px;
+
+  /* Radius — soft, and consistent */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+
+  /* Shell geometry */
+  --topbar-h: 52px;
+  --rail-w: 220px;
+  --status-h: 26px;
+  --inspector-w: 420px;
+  --workspace-pad: 20px;
+  /* Offset for sticky in-page navigation, clear of the top bar. */
+  --sticky-inset: 36px;
+
+  /* Elevation */
+  --shadow-overlay: 0 0 0 1px var(--rule-strong), 0 24px 64px -20px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(165 150 255 / 0.05);
+  --shadow-drawer: -1px 0 0 var(--rule-strong), -32px 0 80px -24px rgb(0 0 0 / 0.85);
+
+  /* Motion */
+  --t-fast: 120ms;   /* hover, press, focus, colour */
+  --t-med: 180ms;    /* state changes: expand, select, reveal */
+  --t-slow: 280ms;   /* overlays and larger movement */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Ambient motion: long, slow and only decorative. Switched off entirely
+     under prefers-reduced-motion. */
+  --t-drift: 26s;
+  --t-sheen: 1100ms;
+  --t-orbit: 14s;
+
+  --backdrop: rgb(3 4 10 / 0.7);
+  --ring: 0 0 0 3px var(--accent-wash), 0 0 0 1px var(--accent-line);
+  /* A raised surface catches light on its top edge. */
+  --edge-hi: inset 0 1px 0 rgb(255 255 255 / 0.045);
+  --edge-lo: inset 0 -1px 0 rgb(0 0 0 / 0.35);
+  --lift-1: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 32px -18px rgb(0 0 0 / 0.7);
+  --lift-2: var(--shadow-overlay);
+  --lift-drawer: var(--shadow-drawer);
+  --lift-overlay: var(--shadow-overlay);
+  --shadow-1: var(--lift-1);
+  --shadow-2: var(--shadow-overlay);
+  --shadow-dialog: var(--shadow-overlay);
+  --ease-out: var(--ease);
+  --context-w: var(--inspector-w);
+  --header-h: var(--topbar-h);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --p-base: #f5f6fb;
+  --p-chrome: #fafbfe;
+  --p-panel: #ffffff;
+  --p-raised: #fafbfe;
+  --p-sunken: #eceef6;
+  --p-hover: #f0f2f9;
+  --p-overlay: #ffffff;
+  --p-inverse: #0c1022;
+
+  --rule: #e3e6ef;
+  --rule-strong: #cfd4e2;
+  --rule-focus: #5a43e6;
+  --rule-control: #7b8199;
+
+  --ink: #0c1022;
+  --ink-muted: #454c66;
+  --ink-faint: #575f7a;
+  --ink-disabled: #a7adbf;
+
+  /* The one literal accent third-party widgets receive (tests hold it equal
+     to ACCENT_LITERAL): a violet that clears 3:1 on both themes' panels. */
+  --accent: #5a43e6;
+  --accent-strong: #3f2bc4;
+  --accent-wash: rgb(90 67 230 / 0.07);
+  --accent-line: rgb(90 67 230 / 0.34);
+
+  --grad-signal: linear-gradient(135deg, #6a4cf5 0%, #5a43e6 55%, #4a4fdc 100%);
+  --grad-signal-soft: linear-gradient(135deg, rgb(106 76 245 / 0.1), rgb(74 79 220 / 0.05));
+  --grad-edge: linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0) 40%);
+  --grad-brand: linear-gradient(100deg, #6a4cf5 0%, #5a43e6 45%, #3d5bd9 100%);
+  --on-signal: #ffffff;
+  --glow-cyan: 0 0 0 1px rgb(90 67 230 / 0.22);
+  --glow-signal: 0 10px 24px -10px rgb(90 67 230 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.22);
+  --glass: rgb(255 255 255 / 0.78);
+  --glass-chrome: rgb(245 246 251 / 0.78);
+  --glass-edge: rgb(12 16 34 / 0.07);
+  --aurora-1: rgb(106 76 245 / 0.12);
+  --aurora-2: rgb(61 91 217 / 0.08);
+  --aurora-3: rgb(15 122 76 / 0.05);
+  --grid-line: rgb(12 16 34 / 0.045);
+
+  --e-pos: #0f7a4c;
+  --e-neg: #c22f2f;
+  --e-warn: #8f5a06;
+  --e-null: #5f6478;
+  --e-pos-wash: rgb(15 122 76 / 0.08);
+  --e-neg-wash: rgb(194 47 47 / 0.07);
+  --e-warn-wash: rgb(143 90 6 / 0.08);
+
+  --backdrop: rgb(12 16 34 / 0.32);
+  --edge-hi: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --edge-lo: inset 0 -1px 0 rgb(12 16 34 / 0.04);
+  --lift-1: 0 1px 2px rgb(12 16 34 / 0.05), 0 10px 28px -16px rgb(12 16 34 / 0.18);
+  --shadow-overlay: 0 0 0 1px var(--rule-strong), 0 24px 56px -22px rgb(12 16 34 / 0.28);
+  --shadow-drawer: -1px 0 0 var(--rule-strong), -24px 0 56px -28px rgb(12 16 34 / 0.24);
+}

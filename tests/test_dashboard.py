@@ -1,0 +1,191 @@
+"""Tests for the market intelligence dashboard service (mocked providers)."""
+
+from __future__ import annotations
+
+from datetime import date
+from unittest.mock import patch
+
+import pytest
+
+from src.providers.schemas import MacroSnapshot, OHLCVBar, PriceSeries, ProviderResult
+from src.services import dashboard_service as ds
+
+
+def series_result(closes: list[float], start: date = date(2025, 7, 10)) -> ProviderResult[PriceSeries]:
+    bars = []
+    day = start
+    for close in closes:
+        day = date.fromordinal(day.toordinal() + 1)
+        while day.weekday() >= 5:
+            day = date.fromordinal(day.toordinal() + 1)
+        bars.append(OHLCVBar(date=day.isoformat(), close=close, volume=1000))
+    return ProviderResult(data=PriceSeries(symbol="X", bars=bars), source="test", confidence=0.85)
+
+
+def monthly_obs(values: list[float]) -> ProviderResult[list]:
+    return ProviderResult(
+        data=[(f"{2025 + i // 12}-{(i % 12) + 1:02d}-01", value) for i, value in enumerate(values)],
+        source="fred", confidence=0.85,
+    )
+
+
+@pytest.fixture(autouse=True)
+def clean():
+    ds.reset_for_tests()
+    yield
+    ds.reset_for_tests()
+
+
+class TestMacroCards:
+    def test_level_series_card(self):
+        obs = monthly_obs([3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.63])
+        with patch.object(ds.providers.macro, "get_series_snapshot", return_value=obs):
+            card = ds._macro_card({"id": "FEDFUNDS", "label": "Fed", "unit": "%", "explain": "x"})
+        assert card["value"] == 3.63
+        assert card["previous"] == 3.6
+        assert card["change"] == pytest.approx(0.03)
+        assert card["direction"] == "up"
+        assert len(card["trend"]) == 6
+
+    def test_yoy_series_card(self):
+        # 15 monthly index values rising 0.4%/month → ~4.9% y/y
+        values = [100 * (1.004 ** i) for i in range(15)]
+        with patch.object(ds.providers.macro, "get_series_snapshot", return_value=monthly_obs(values)):
+            card = ds._macro_card({"id": "CPIAUCSL", "label": "CPI", "unit": "index",
+                                   "yoy": "true", "explain": "x"})
+        assert card["unit"] == "% y/y"
+        assert card["value"] == pytest.approx(4.9, abs=0.2)
+
+    def test_failed_series_returns_none(self):
+        failed = ProviderResult(data=None, error="down")
+        with patch.object(ds.providers.macro, "get_series_snapshot", return_value=failed):
+            assert ds._macro_card(ds.MACRO_SERIES[0]) is None
+
+
+class TestSectorsAndBreadth:
+    def test_sector_row_and_breadth_score(self):
+        rising = series_result([100 + i * 0.5 for i in range(260)])
+        with patch.object(ds.providers.market_data, "get_series", return_value=rising):
+            breadth, sectors = ds._breadth_and_sectors()
+
+        assert len(sectors) == len(ds.SECTOR_ETFS)
+        assert all(row["above_50d"] for row in sectors)
+        assert breadth["breadth_score"] == 100
+        assert breadth["sector_count"] == 11
+        row = sectors[0]
+        assert row["strength_21d"] > 0 and row["momentum_63d"] > 0
+        assert row["verdict"] in ("Buy", "Strong Buy", "Hold")
+
+    def test_breadth_survives_total_provider_failure(self):
+        failed = ProviderResult(data=None, error="down")
+        with patch.object(ds.providers.market_data, "get_series", return_value=failed):
+            breadth, sectors = ds._breadth_and_sectors()
+        assert sectors == []
+        assert breadth["breadth_score"] is None
+
+
+class TestEvents:
+    def test_upcoming_sorted_with_countdown(self):
+        failed = ProviderResult(data=None, error="down")
+        with patch.object(ds.providers.market_data, "get_series", return_value=failed):
+            events = ds._events(date(2026, 7, 4))
+        assert events, "expected upcoming events from static calendars"
+        assert events == sorted(events, key=lambda event: event["date"])
+        first = events[0]
+        assert first["days_away"] >= 0
+        assert first["importance"] in ("high", "medium")
+
+    def test_event_volatility_is_measured_from_bars(self):
+        closes = [100.0] * 250
+        closes[100] = 102.0  # +2% on an event day
+        result = series_result(closes)
+        bars = result.data.bars
+        event_day = date.fromisoformat(bars[100].date)
+        move = ds._event_volatility(bars, [event_day])
+        assert move == pytest.approx(2.0, abs=0.1)
+
+
+class TestAssemblyCache:
+    def test_dashboard_caches(self):
+        failed = ProviderResult(data=None, error="down")
+        snapshot = ProviderResult(data=MacroSnapshot(yield_spread=0.3, inflation_rate=3.0,
+                                                     fed_funds_rate=3.6), source="fred", confidence=0.85)
+        with patch.object(ds.providers.macro, "get_series_snapshot", return_value=failed), \
+             patch.object(ds.providers.macro, "get_macro", return_value=snapshot), \
+             patch.object(ds.providers.market_data, "get_series", return_value=failed):
+            first = ds.get_dashboard()
+            second = ds.get_dashboard()
+        assert first["cached"] is False
+        assert second["cached"] is True
+        assert first["macro"]["regime"]["risk_multiplier"] == 1.0
+
+
+# ── breadth history ──────────────────────────────────────────────────────────
+
+def test_breadth_history_is_computed_from_the_sector_series():
+    """Real history from prices already in hand — no persistence, available
+    in full on the first request rather than accumulating over weeks."""
+    from src.services.dashboard_service import HISTORY_DAYS, _breadth_history
+
+    dates = [f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(200)]
+    rising = [{"_closes": [(d, 100.0 + i) for i, d in enumerate(dates)]}]
+    falling = [{"_closes": [(d, 300.0 - i) for i, d in enumerate(dates)]}]
+
+    assert all(p["score"] == 100 for p in _breadth_history(rising))
+    assert all(p["score"] == 0 for p in _breadth_history(falling))
+
+
+def test_breadth_history_is_capped_and_ordered():
+    from src.services.dashboard_service import HISTORY_DAYS, _breadth_history
+
+    dates = [f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(300)]
+    rows = [{"_closes": [(d, 100.0 + i) for i, d in enumerate(dates)]}]
+    history = _breadth_history(rows)
+
+    assert len(history) <= HISTORY_DAYS
+    assert [p["date"] for p in history] == sorted(p["date"] for p in history)
+
+
+def test_breadth_history_mixes_sectors():
+    from src.services.dashboard_service import _breadth_history
+
+    dates = [f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(120)]
+    rows = [
+        {"_closes": [(d, 100.0 + i) for i, d in enumerate(dates)]},
+        {"_closes": [(d, 300.0 - i) for i, d in enumerate(dates)]},
+    ]
+    assert all(p["score"] == 50 for p in _breadth_history(rows))
+
+
+def test_breadth_history_is_empty_without_enough_bars():
+    from src.services.dashboard_service import _breadth_history
+
+    short = [{"_closes": [(f"2025-01-{i + 1:02d}", 100.0) for i in range(20)]}]
+    assert _breadth_history(short) == []
+    assert _breadth_history([]) == []
+    assert _breadth_history([{}]) == []
+
+
+def test_internal_close_series_never_reaches_the_response(offline_network, synthetic_series):
+    """`_closes` is a computation detail; leaking it would bloat every payload.
+
+    Built from a fixed series rather than the live market. It used to call
+    every vendor, and offline the sector list came back empty, so the
+    assertion over it was vacuously true — it passed precisely when it could
+    check nothing. The sectors are asserted present first for that reason.
+    """
+    from unittest.mock import patch
+
+    from src.services import dashboard_service as ds
+
+    ds.reset_for_tests()
+    try:
+        with patch.object(
+            ds.providers.market_data, "get_series",
+            side_effect=lambda symbol, period="1y": synthetic_series(symbol),
+        ):
+            payload = ds.get_dashboard()
+    finally:
+        ds.reset_for_tests()
+    assert payload["sectors"], "no sector rows were built, so there was nothing to check"
+    assert all("_closes" not in row for row in payload["sectors"])

@@ -1,0 +1,652 @@
+# Cloud Run deployment
+
+Cloud Run is the validated candidate backend for FinSignal. Render remains
+the active rollback target until the Vercel-to-Cloud-Run authentication path
+is proven end to end.
+
+## Provisioned candidate (2026-09-22)
+
+| Resource | Value |
+|---|---|
+| Project | `finsignal-api-aakash-2026` (`797507035809`) |
+| Region | `asia-south1` |
+| Existing service | `finsignal-api-poc` |
+| Runtime identity | `finsignal-api-runtime@finsignal-api-aakash-2026.iam.gserviceaccount.com` |
+| Vercel bridge identity | `finsignal-vercel@finsignal-api-aakash-2026.iam.gserviceaccount.com` |
+| Workload identity pool/provider | `vercel` / `vercel` |
+| Trusted issuer | `https://oidc.vercel.com/aakash-jawales-projects` |
+| Trusted Vercel subjects | project `mini-aladding`, environments `preview` and `production` only |
+
+The bridge identity has service-level `run.invoker`; it has no project-wide
+application role and no downloaded key. The runtime identity receives
+`secretAccessor` on individual secret resources, not at project scope.
+
+Secret containers currently exist for `deepseek-api-key`, `groq-api-key`,
+`alpha-vantage-key`, `fred-api-key`, `newsapi-key`, and
+`supabase-service-role-key`. Their values are deliberately not copied from
+Render by automation. A container with no enabled version must not be attached
+to Cloud Run; add each value through Secret Manager, verify an enabled version,
+and only then add its environment mapping to the candidate revision.
+
+As of the 2026-09-22 audit, all six containers have zero enabled versions. The
+credential-parity gate is therefore **closed**. The intended mappings are:
+
+| Secret resource | Runtime variable | Cutover role |
+|---|---|---|
+| `deepseek-api-key` | `DEEPSEEK_API_KEY` | Grounded final writer |
+| `groq-api-key` | `GROQ_API_KEY` | Analyst stage and bounded fallback |
+| `alpha-vantage-key` | `ALPHA_VANTAGE_KEY` | Fundamentals and provider fallback |
+| `fred-api-key` | `FRED_API_KEY` | Macro regime inputs |
+| `newsapi-key` | `NEWSAPI_KEY` | Optional news vendor (one of several; the stored value is currently rejected by NewsAPI - see "News providers" below) |
+| `supabase-service-role-key` | `SUPABASE_SERVICE_ROLE_KEY` | Server-only persistence |
+
+`SUPABASE_URL`, `CLERK_JWKS_URL`, and `CLERK_ISSUER` are configuration rather
+than credentials, but their production values must also be present before
+parity can pass. Optional provider keys are added only when the active Render
+configuration and a tested runtime path require them; inventorying a provider
+in source is not sufficient reason to grant a new secret.
+
+## Runtime contract
+
+- Image: Linux `amd64`, Python 3.12, one non-root Uvicorn process.
+- Initial allocation: 1 vCPU, 2 GiB memory.
+- Request concurrency: 1.
+- Autoscaling: minimum 0, maximum 1 during the validation phase.
+- Request timeout: 600 seconds.
+- Access: authenticated only. An anonymous request must receive `403`.
+- Startup: `uvicorn api.index:app`, one worker, listening on `$PORT`.
+
+The single worker and concurrency of one are deliberate. Python imports are a
+material part of the process footprint, and multiplying workers multiplies
+that baseline. Provider calls still overlap inside the process-wide bounded
+executor and are additionally constrained by capability fan-out budgets.
+
+### Optional settings that are not set in production
+
+These are read by the backend, have a working default, and are listed here because they
+appear nowhere else. Setting one is an environment change on the next revision.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SEC_USER_AGENT` | `FinSignal Research (contact: research@finsignal.app)` | Sent to SEC EDGAR. **OWNER ACTION REQUIRED:** SEC's fair-access policy asks for a User-Agent that names a real contact; set it to a mailbox the owner reads (`OWNER_ACTIONS.md`). Production currently runs on the default |
+| `CLERK_AUTHORIZED_PARTIES` | unset (no check) | Comma-separated origins whose Clerk tokens are accepted; see `CLERK_PRODUCTION.md` before enabling |
+| `MACRO_CACHE_TTL` | `300` (seconds) | How long a complete macro regime reading is reused |
+| `APIFY_SEARCH_ACTOR`, `APIFY_RESEARCH_ACTOR` | `apify/google-search-scraper`, `apify/rag-web-browser` | The Apify actors used for search and research when an Apify token is configured |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Override for the DeepSeek-compatible endpoint |
+
+The image copies only product read models: `experiments/`, `artifacts/`, data
+manifests, the model registry, reports, and universe metadata. Raw SEC archives,
+training panels, curated research tables, and per-trial prediction files are
+offline inputs and must not be baked into the API image.
+
+### Local validation (2026-09-21)
+
+| Measure | Broad data copy | Runtime allowlist |
+|---|---:|---:|
+| Docker build context | 6.12 GB | 83.17 MB |
+| Image size | 6.22 GB | 328.12 MB |
+
+The allowlist reduced the image by 94.7%. The `linux/amd64` image started as
+the non-root `finsignal` user and answered `/api/health`,
+`/api/system/health`, `/api/quant/status`, and `/api/quant/model-lab`. Startup
+RSS was 195.95 MB; after those reads RSS was 202.21 MB with a 203.18 MB peak.
+The bundled registry reported 103 entries and Model Lab returned 79 completed
+outer-evaluation records.
+
+## Build and deploy a candidate
+
+Use a dedicated project and region selected by the operator. Commands below
+contain identifiers only; secret values must never be placed on the command
+line or in shell history.
+
+```bash
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/finsignal-api:COMMIT
+
+gcloud run deploy finsignal-api-poc \
+  --image REGION-docker.pkg.dev/PROJECT/REPOSITORY/finsignal-api:COMMIT \
+  --region REGION \
+  --platform managed \
+  --cpu 1 \
+  --memory 2Gi \
+  --concurrency 1 \
+  --min-instances 0 \
+  --max-instances 1 \
+  --timeout 600 \
+  --no-allow-unauthenticated \
+  --service-account finsignal-api-runtime@PROJECT.iam.gserviceaccount.com \
+  --set-env-vars MEMORY_LIMIT_MB=2048,DEPLOYMENT_ENV=cloud_run,WEB_CONCURRENCY=1,PROVIDER_CONCURRENCY_LIMIT=8 \
+  --set-secrets ALPHA_VANTAGE_KEY=alpha-vantage-key:latest
+```
+
+Add DeepSeek, Groq, provider, Supabase, Clerk, and Logo.dev variables through
+Secret Manager references or non-secret environment variables according to
+their sensitivity. Do not copy values from Render into repository files.
+
+Before adding a reference, prove that its version exists without reading it:
+
+```bash
+gcloud secrets versions list SECRET_NAME \
+  --project finsignal-api-aakash-2026 \
+  --filter='state=ENABLED' \
+  --format='value(name)'
+```
+
+The minimum mappings for the new narrative path are
+`DEEPSEEK_API_KEY=deepseek-api-key:latest` and
+`GROQ_API_KEY=groq-api-key:latest`. Provider and persistence parity with Render
+is a separate cutover gate, not something the deploy command may silently omit.
+Set `DEEPSEEK_FAST_MODEL=deepseek-flash` and
+`DEEPSEEK_PRO_MODEL=deepseek-v4-pro`; remove the stale
+`DEEPSEEK_MODEL=deepseek-chat` setting rather than allowing the compatibility
+fallback to select a retired model.
+The measured first real calls also require `LLM_TIMEOUT=20` and use the bounded
+`LLM_MAX_OUTPUT_TOKENS=6000`; the compact v2 prompt contracts keep typical
+responses below that ceiling. The DeepSeek final writer streams its response
+in one non-retried attempt: a 20 s limit on silence between chunks, a 25 s
+limit on the first content token (an overloaded API answers 200 and then sends
+only keep-alives), and a whole-write deadline of `LLM_FAST_TIMEOUT` (default
+60 s) for Flash or `LLM_DEEP_TIMEOUT` (default 70 s) for Pro, capped at 80 s. Cloud Run writes best-effort analyst snapshots
+and third-party caches only under ephemeral `/tmp`, never under `/app`.
+
+## Preview candidates
+
+Every backend change reaches the redesign preview as an immutable, private,
+zero-traffic revision built from one commit:
+
+```bash
+SHA=$(git rev-parse HEAD); SHORT=${SHA:0:7}
+git archive "$SHA" | tar -x -C "$BUILD_DIR" && cp "$BUILD_DIR/.dockerignore" "$BUILD_DIR/.gcloudignore"
+(cd "$BUILD_DIR" && gcloud builds submit --region asia-south1 \
+  --tag asia-south1-docker.pkg.dev/finsignal-api-aakash-2026/cloud-run-source-deploy/finsignal-api:$SHORT)
+gcloud run deploy finsignal-api-poc --region asia-south1 \
+  --image asia-south1-docker.pkg.dev/finsignal-api-aakash-2026/cloud-run-source-deploy/finsignal-api@DIGEST \
+  --no-traffic --tag redesign-$SHORT --revision-suffix redesign-$SHORT \
+  --update-env-vars GIT_COMMIT=$SHA
+cd dashboard && vercel env update BACKEND_ORIGIN preview redesign/research-terminal \
+  --value https://redesign-$SHORT---finsignal-api-poc-saigcozo6q-el.a.run.app --yes
+```
+
+- Building from `git archive` means the image contains the commit and nothing
+  else from the working tree; deploying by digest means the revision cannot
+  drift if the tag is reused. `/api/health` reports the commit it was built
+  from.
+- `--no-traffic` keeps production on its current revision. The tag gives the
+  candidate its own URL; the branch-scoped `BACKEND_ORIGIN` points only the
+  redesign preview at it.
+- `CLOUD_RUN_AUDIENCE` stays the canonical service URL even when the origin
+  is a tag URL. Cloud Run validates the identity token against the service,
+  not the tag; minting it for the tag URL is refused.
+- Secrets are added per revision with `--update-secrets NAME=secret:latest`
+  after confirming an enabled version exists and the runtime service account
+  holds `secretAccessor` on that secret alone.
+- Verify before use: an unauthenticated request to the tag URL returns `403`,
+  the IAM policy has no `allUsers`/`allAuthenticatedUsers`, and the traffic
+  split still shows 100% on the production revision.
+
+A Vercel environment change applies to the next deployment, so the branch is
+pushed after the origin is updated.
+
+## Validation gate
+
+Before changing `BACKEND_ORIGIN` in Vercel:
+
+1. Verify anonymous access returns `403`.
+2. Obtain an identity token for the intended service account and verify
+   `/api/health`, `/api/system/health`, `/api/quant/status`, and
+   `/api/quant/model-lab` return `200`.
+3. Confirm `/api/system/health` reports the expected memory limit, one worker,
+   and bounded provider concurrency.
+4. Run a cold research request and record before/peak/after RSS.
+5. Run a bounded soak and confirm RSS returns to a stable band.
+6. Configure Vercel OIDC → Google Workload Identity Federation for a dedicated
+   least-privilege bridge service account. The App Router proxy exchanges the
+   short-lived Vercel token and sends the Google ID token in
+   `X-Serverless-Authorization`, preserving Clerk's browser `Authorization`
+   header for application auth. No service-account key is stored.
+7. Only then update Vercel's backend origin and retain Render for rollback.
+
+The configured provider uses Vercel's team issuer and allowed audience
+`https://vercel.com/aakash-jawales-projects`. Its principal bindings are exact
+subjects, not an `attribute.project` wildcard:
+
+```text
+owner:aakash-jawales-projects:project:mini-aladding:environment:preview
+owner:aakash-jawales-projects:project:mini-aladding:environment:production
+```
+
+The bridge implementation is in `dashboard/src/app/api/[...path]/route.ts` and
+`dashboard/src/lib/backend-proxy.ts`. Infrastructure configuration and a
+successful preview smoke test remain mandatory before changing production.
+
+## Rollback
+
+Set Vercel `BACKEND_ORIGIN` to the existing Render service,
+`BACKEND_AUTH_MODE=none`, and redeploy the
+frontend. Cloud Run revisions are immutable; route traffic back to the last
+known-good revision if the failure is isolated to a new backend revision.
+
+**Warm Render first.** Nothing keeps the Render services awake (the scheduled
+keep-alive workflow was retired on 2026-10-08: GitHub throttled its `*/10` cron
+to a median gap of ~286 minutes, so it never kept anything warm, and production
+uses neither Render service). A free-tier service that has slept answers its
+first request in roughly 43 seconds. Before pointing Vercel at it, wake it and
+wait for a `200`:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' --max-time 120 --retry 3 --retry-all-errors \
+  https://minialaddin-d8oe.onrender.com/api/health
+```
+
+The Render backend is not configured with the inference service's URL in this
+deployment, so the model panel reports itself unavailable there, as it does on
+Cloud Run.
+
+## Release procedure and provenance (2026-10-07)
+
+> The "Provisioned candidate" section above is a point-in-time record from
+> 2026-09-22 and is superseded by this one: the runtime identity now holds
+> per-secret `secretAccessor` bindings, and candidate revisions carry the
+> Clerk, Supabase, provider and LLM configuration.
+
+A push to GitHub does not by itself change what users see. Two independent
+systems decide that, and only one of them watches Git:
+
+| Tier | Source of truth | Triggered by | Identifies itself at |
+|---|---|---|---|
+| Frontend (Vercel project `mini-aladding`, root `dashboard`, production branch `main`) | the GitHub commit | a push to `main`; a CLI deploy carries **no** git metadata | `GET /api/build` (public) |
+| Backend (Cloud Run service `finsignal-api-poc`, `asia-south1`) | the container image **and the traffic split** | a manual build and deploy; there are no Cloud Build triggers | `GET /api/health` (private; needs an identity token) |
+
+Pushing code to `main` updates the first and does nothing to the second. A new
+Cloud Run revision also serves no traffic until it is given some, so "deployed"
+and "live" are different states. That gap is how a production service ran a
+credential-free proof-of-concept revision for weeks while the repository moved
+on.
+
+### Deploy the backend
+
+```bash
+SHA=$(git rev-parse HEAD)               # the commit that is on origin/main
+SHA7=${SHA:0:7}
+mkdir -p /tmp/src-$SHA7 && git archive $SHA | tar -x -C /tmp/src-$SHA7   # tracked files only: no .env
+
+# Builds run as finsignal-build, not the default compute account (see
+# "Least privilege" below). A custom account needs the config file.
+gcloud builds submit /tmp/src-$SHA7 --project finsignal-api-aakash-2026 \
+  --config cloudbuild.yaml --substitutions _TAG=$SHA7 \
+  --service-account projects/finsignal-api-aakash-2026/serviceAccounts/finsignal-build@finsignal-api-aakash-2026.iam.gserviceaccount.com
+
+# a revision that takes no traffic yet, tagged so it can be tested
+gcloud run deploy finsignal-api-poc --project finsignal-api-aakash-2026 --region asia-south1 \
+  --image asia-south1-docker.pkg.dev/finsignal-api-aakash-2026/cloud-run-source-deploy/finsignal-api@<digest> \
+  --no-traffic --tag release-$SHA7 --revision-suffix release-$SHA7 \
+  --min-instances 1 --update-env-vars GIT_COMMIT=$SHA
+```
+
+`GIT_COMMIT` is not optional: it is the only thing that lets the running
+service name its commit. Without it `/api/health` reports `"unknown"`.
+
+### Prove what is running
+
+The service is private. Call it with an identity token; never make it public.
+
+```bash
+TOKEN=$(gcloud auth print-identity-token)
+curl -s -H "Authorization: Bearer $TOKEN" https://<tagged-or-service-url>/api/health
+#   "commit":   the Git SHA the image was built from
+#   "revision": Cloud Run's own revision name (K_REVISION)
+curl -s https://finsignalterminal.vercel.app/api/build
+#   commit, ref, environment, deployment (Vercel id), built_at
+```
+
+Both checks are scripted. `scripts/smoke_cloud_run.py <url> <commit-prefix>
+<revision>` runs ~40 probes against a private URL with your own identity token
+(identity, research truth, search, chart and quote semantics, FRED, and every
+paper-trading mutation refused); run it on the tagged zero-traffic revision
+before moving traffic and on the service URL after.
+`scripts/smoke_credential_free.py` starts the API with an empty environment and
+no `.env`, from a clean `git archive`, and proves nothing needs a credential
+to start or to refuse.
+
+The chain is only proven when all of these agree:
+
+1. `git rev-parse HEAD` equals `git ls-remote origin refs/heads/main`.
+2. `/api/build` `commit` on the production alias equals that SHA.
+3. `/api/health` `commit` on the service URL equals that SHA, and `revision`
+   names the revision holding 100% of traffic
+   (`gcloud run services describe finsignal-api-poc --format='value(status.traffic)'`).
+4. **The website reaches that revision.** Every backend response names the build that
+   produced it, and the proxy passes the header through, so a public route read through
+   the website shows which backend the website is really calling:
+
+   ```bash
+   curl -s -D - -o /dev/null https://finsignalterminal.vercel.app/api/macro | grep -i '^x-backend'
+   #   x-backend-commit:   the SHA from step 3 (first 12 characters)
+   #   x-backend-revision: finsignal-api-poc-release-<sha7>
+   ```
+
+   Steps 1 to 3 describe the service. Only this one describes the website.
+
+### What the website calls
+
+Production's `BACKEND_ORIGIN` (Vercel, Production) must be the **service URL**,
+`https://finsignal-api-poc-saigcozo6q-el.a.run.app`, so that moving traffic moves the
+website. It must never be a tag URL (`https://<tag>---finsignal-api-poc-...`): a tag is
+pinned to one revision for as long as it exists, so a release moves traffic and the website
+keeps calling the old build, and removing the tag turns every backend call from the website
+into a Google `404` page.
+
+Until 2026-10-08 production's origin was the tag `candidate-fast-601fb7f`, a revision built
+from commit `601fb7f` on 2026-09-22. The variable was 17 days old, which puts the start at about
+2026-09-21; every backend release after that passed its smoke suite and took the traffic, and the
+website did not call any of them. The three-way agreement above (GitHub, Vercel, the service) held
+throughout, because nothing in it named what the website calls. It came to light when the tag was
+removed during a cleanup of idle instances: for about 55 minutes (16:37 to 17:32 UTC) every backend
+call the website made answered a Google 404 page, until the tag was restored and the origin was
+changed to the service URL. The header check above is what would have shown it earlier, and
+the cleanup procedure above now says to read the origins before removing any tag.
+
+Vercel reads an environment variable when a deployment is created, so changing the origin needs a
+new deployment: `vercel env update BACKEND_ORIGIN production --value <url> --yes`, then
+`vercel redeploy <current production deployment id> --target production` (a redeploy keeps the
+commit, so `/api/build` still names it). Preview deployments have their own origin; the default
+for previews is still the `candidate-fast-601fb7f` tag, so that tag and its revision's idle
+instance stay until previews are given another origin (`OWNER_ACTIONS.md`, item 6).
+
+### Move traffic, and undo it
+
+Backend first: an older frontend tolerates a newer backend, but a newer
+frontend calling an older backend meets routes that do not exist.
+
+```bash
+gcloud run services update-traffic finsignal-api-poc --region asia-south1 \
+  --project finsignal-api-aakash-2026 --to-revisions=finsignal-api-poc-release-$SHA7=100
+# rollback is the same command naming the previous revision
+```
+
+An anonymous request to the service must still receive `403`.
+
+**Then warm it.** The log reads `Starting new instance. Reason:
+DEPLOYMENT_ROLLOUT` at the moment traffic moves, so the first request after a
+release meets a fresh container (about 6 s), a cold macro cache on it (about
+3 s) and, if the frontend was deployed too, a new Vercel function. Measured
+once, that was 13 s through Vercel. Make the first request yourself, before
+anyone else does:
+
+```bash
+curl -s https://finsignalterminal.vercel.app/api/macro >/dev/null   # container, FRED cache, function
+python3 scripts/smoke_cloud_run.py <service-url> <commit-prefix> <revision>
+```
+
+### Release the superseded revisions' instances
+
+**A tagged revision keeps its minimum instance even at 0% traffic.** Every
+release above is deployed with `--min-instances 1` and a `release-<sha>` tag, and
+nothing removed the tag afterwards. Measured on 2026-10-08 from Cloud Monitoring
+(`run.googleapis.com/container/instance_count`, grouped by revision): ten
+revisions each held an instance around the clock, nine of them idle and serving
+nothing, on a service whose whole capacity is one instance. Removing a tag
+released that revision's instance within a minute, and the revision itself stays
+(a rollback names it, not its tag). The idle instances run no background work
+and spend no vendor budget; the cost was money and nothing else.
+
+After a release is verified, keep the tag only on the revision that is the
+instant-rollback target (the one you just replaced) and remove the rest. **Before
+removing any tag, read every Vercel `BACKEND_ORIGIN`** (`vercel env pull` for Production
+and for Preview, looking only at that line): a tag that an origin names is not spare.
+Remove only tags named `release-<sha>` that no origin uses:
+
+```bash
+gcloud run services update-traffic finsignal-api-poc --region asia-south1 \
+  --project finsignal-api-aakash-2026 --remove-tags=release-<older-sha>,release-<older-sha>
+```
+
+Rolling back to an untagged revision works the same way
+(`--to-revisions=<revision>=100`); it starts cold, so warm it as above. To audit
+what is running, count instances per revision rather than reading the revision
+list: its `ACTIVE` column says `yes` for revisions that hold none.
+
+```bash
+python3 - <<'PY'
+import json, subprocess, urllib.parse, urllib.request, datetime
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token'], text=True).strip()
+now = datetime.datetime.now(datetime.timezone.utc)
+query = urllib.parse.urlencode({
+    'filter': 'metric.type="run.googleapis.com/container/instance_count" AND resource.labels.service_name="finsignal-api-poc"',
+    'interval.startTime': (now - datetime.timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'interval.endTime': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'aggregation.alignmentPeriod': '600s', 'aggregation.perSeriesAligner': 'ALIGN_MAX',
+    'aggregation.crossSeriesReducer': 'REDUCE_SUM', 'aggregation.groupByFields': 'resource.labels.revision_name',
+})
+request = urllib.request.Request(
+    'https://monitoring.googleapis.com/v3/projects/finsignal-api-aakash-2026/timeSeries?' + query,
+    headers={'Authorization': 'Bearer ' + token})
+for series in json.load(urllib.request.urlopen(request)).get('timeSeries', []):
+    print(series['resource']['labels']['revision_name'], series['points'][0]['value'])
+PY
+```
+
+Expect one revision (the one holding traffic) plus at most the one rollback target.
+
+
+## Hardening pass (2026-10-07)
+
+### Least privilege
+
+The runtime identity was never the problem: the live service runs as
+`finsignal-api-runtime`, which holds **no project role** and reads secrets
+through per-secret `secretAccessor` bindings. The broad grant was on the
+**default compute service account**, which held `roles/editor` on the whole
+project — and could not simply be removed, because *Cloud Build ran as that
+account*. The one thing that depended on it was the build.
+
+| | Before | After |
+|---|---|---|
+| Image builds run as | default compute SA (`roles/editor`) | `finsignal-build` |
+| `finsignal-build` can | — | push to the `cloud-run-source-deploy` repository only; read the `…_cloudbuild` source bucket only; write build logs |
+| Default compute SA project roles | `roles/editor` | none |
+| Service accounts holding `roles/editor` | 1 | 0 |
+| User-managed service-account keys | 0 | 0 |
+
+Order matters if this is ever repeated: create the account and grants, prove a
+build succeeds under it (`--service-account`), and only then remove the old
+grant. Reverting is `gcloud projects add-iam-policy-binding … --role=roles/editor`.
+`797507035809@cloudbuild.gserviceaccount.com` still holds the legacy
+`roles/cloudbuild.builds.builder`; nothing uses it (no triggers exist) and it
+was left alone rather than widen the change. The original proof-of-concept
+revision `finsignal-api-poc-00001-wql` (0% traffic) still names the default
+compute account; it calls no Google API, so it needs no role.
+
+### Cold start
+
+Measured, not assumed. On a revision scaled to zero, the first `/api/health`
+(which does no work) took **9.9 s**; the same call warm takes ~40 ms. Cloud Run's
+own `container/startup_latencies` reported 6.0–7.9 s per new instance, and the
+log shows 9.6 s from "Starting new instance" to uvicorn's first line. The
+application is not the cost: importing it takes ~0.5–0.7 s locally and the first
+request is answered in 56 ms. A first FRED fetch then adds ~3.5 s, and the
+Vercel proxy's token exchange a little more — together the ~16 s seen on the
+landing page's macro strip.
+
+What was done, in order of how much it matters:
+
+1. **`--min-instances 1`.** The only thing that removes the cold start from the
+   first user request, because it is instance provisioning and image fetch, not
+   code. Cost: one always-allocated instance (1 vCPU, 2 GiB) at Cloud Run's idle
+   rate — an estimated US$10–25 a month in `asia-south1`; check the billing
+   report rather than trusting that range. Revert with
+   `gcloud run services update finsignal-api-poc --min-instances 0`. Chosen
+   over a scheduled ping because a ping needs a new service (Cloud Scheduler)
+   and an extra invoker identity, and still gives no guarantee that the
+   instance survives between pings.
+2. **Bytecode precompiled in the image** (`Dockerfile`). Small and free: 0.68 s
+   → 0.56 s import.
+
+Not done, on purpose: pruning dependencies. `pyarrow` (≈108 MB) and `scipy`
+(≈98 MB) dominate the image, but removing either needs proof that no runtime
+path imports it, and a wrong guess is a production outage to save seconds that
+`min-instances` already removes.
+
+Measured after the change, from a machine in India:
+
+| Request | Before | After |
+|---|---|---|
+| Cloud Run direct, first request after ≥10 min idle | 9.9 s | 0.06 s |
+| Public path (Vercel → OIDC → Cloud Run → FRED), first request after ≥10 min idle | ~14–16 s | 2.3 s |
+| Same, warm | 0.9–2.1 s | 0.6 s |
+| First request in the minutes after a release | — | up to ~13 s (see "Then warm it") |
+
+The 2.3 s is Vercel's own function start and the three-call Google token
+exchange, which the proxy then caches for ~55 minutes.
+
+### Where the proxy runs
+
+The Vercel project defaulted to `iad1` (US East). Requests entered at Mumbai
+(`x-vercel-id: bom1::iad1::…`), ran in Virginia, then called Cloud Run back in
+Mumbai: two crossings of the planet for a call whose backend time is a few
+milliseconds. `dashboard/vercel.json` pins the functions to `bom1`, beside the
+backend. A user anywhere still pays one long hop, so this is never worse than
+the default and is much better for the people the product is for; a test
+(`dashboard/tests/function-region.test.ts`) pins it. It is a configuration
+file rather than a project setting so the decision is reviewable and
+reproducible.
+
+Concurrency stays at 1 with a single instance, so a long research request
+(tens of seconds) still queues the next one. That is the memory-bounding
+decision recorded above, unchanged.
+
+### News providers
+
+**OWNER ACTION REQUIRED:** provide a valid NewsAPI key, or leave the provider disabled on purpose; both are
+correct and the exact commands are in `OWNER_ACTIONS.md`. Until then it is reported truthfully as rejected.
+
+`NEWSAPI_KEY` is bound to Secret Manager secret `newsapi-key`, which holds one
+enabled version. That value is 36 characters in UUID form, not the 32-hex
+characters of a NewsAPI key, and NewsAPI answers it with `apiKeyInvalid`; it is
+not a copy of any other secret. The integration itself is correct (documented
+endpoint, `X-Api-Key` header), so the fix is a valid key, which only the
+account owner can obtain from newsapi.org:
+
+```bash
+printf '%s' "<new-key>" | gcloud secrets versions add newsapi-key --data-file=-
+```
+
+then deploy a new revision, since secrets are read when an instance starts.
+
+Until then the product reports it truthfully: the vendor chain falls through to
+the other news sources and names the one that answered; a rejected credential is
+its own state (`AUTH_FAILURE`, credential `rejected`) rather than "paused"; it
+is re-probed once every 15 minutes, not every minute; and `/api/health`, the
+provider inventory and the providers page no longer call it available. A
+configured key nothing has used yet is reported as `unverified`, so a fresh
+instance says "configured" until the first news request settles it.
+
+## Alert scheduler (tracker, alerts and paper trading release)
+
+Alerts are stored by the website but only evaluated when something calls
+`POST /api/internal/alerts/evaluate` on the backend. Nothing in this repository
+creates that caller; it is an owner action. The names below are the ones the
+backend actually reads (`api/index.py`, `evaluate_alerts`) and the tests pin
+them (`tests/test_tracker_alerts.py`, `tests/test_scheduler_contract.py`,
+`dashboard/tests/backend-proxy.test.ts`):
+
+| What | Name | Notes |
+|---|---|---|
+| Backend variable | `ALERTS_SCHEDULER_TOKEN` | At least **24** characters. Unset or shorter: the endpoint answers `503` and never evaluates. |
+| Request header | `X-Scheduler-Token` | Compared with `hmac.compare_digest`; a wrong value answers `403`. |
+| Cloud Run identity check | `Authorization: Bearer <OIDC token>` | The service is private (`--no-allow-unauthenticated`), so the caller also needs `roles/run.invoker` on `finsignal-api-poc`. |
+| Website | `/api/internal/*` | Refused by `dashboard/src/lib/backend-proxy.ts` with `404` before any upstream call, whatever headers the browser sends. |
+
+A scheduler configured with any other variable or header name reaches `503` or
+`403` and evaluates nothing; `tests/test_scheduler_contract.py` fails if the
+documents and the code stop agreeing.
+
+The secret container for the token does not exist yet (verified read-only on
+2026-10-29: it is absent from `gcloud secrets list`). The name
+`alerts-scheduler-token` below is a proposal, not an existing resource.
+
+### Release order for the tracker, alerts and paper-trading release
+
+The database change comes first, because the new backend reads the new tables
+and columns; the backend before the frontend, as above.
+
+```bash
+# 0. Nothing is applied yet: this lists what would be (read-only)
+supabase db push --linked --dry-run          # expect exactly 20261025000000_tracker_alerts_paper.sql
+
+# 1. A logical backup first. On 2026-10-29 the Supabase project reported no physical
+#    backups and point-in-time recovery off, so there is nothing else to restore from.
+supabase db dump --linked --data-only --schema public --use-copy -f ~/finsignal-public-data-$(date +%Y%m%d).sql
+
+# 2. The migration. Additive and re-runnable (verified against a scratch Postgres 17,
+#    applied twice); it keeps every existing watchlist row.
+supabase db push --linked
+```
+
+Rollback of step 2 is `supabase/rollbacks/20261025000000_tracker_alerts_paper.down.sql`,
+run by hand, after the backend has been rolled back. It drops the four new tables
+and the seven added columns, so it **permanently deletes** every alert, trigger
+history row, inbox item and paper-order reference created since, and every list
+order, default flag, sort preference, note and tag. The existing watchlists and
+their items survive. Take a fresh data dump immediately before running it if
+anything of value has been created since release.
+
+```bash
+# 1. The secret (value generated locally, never printed or committed)
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))' \
+  | gcloud secrets create alerts-scheduler-token --project finsignal-api-aakash-2026 \
+      --replication-policy=automatic --data-file=-
+gcloud secrets add-iam-policy-binding alerts-scheduler-token --project finsignal-api-aakash-2026 \
+  --member serviceAccount:finsignal-api-runtime@finsignal-api-aakash-2026.iam.gserviceaccount.com \
+  --role roles/secretmanager.secretAccessor
+
+# 2. The backend reads it when an instance starts, so this makes a new revision
+gcloud run services update finsignal-api-poc --project finsignal-api-aakash-2026 --region asia-south1 \
+  --update-secrets ALERTS_SCHEDULER_TOKEN=alerts-scheduler-token:latest
+```
+
+**A limit of Cloud Scheduler.** An HTTP job's header values are plain text in the
+job definition; the service has no Secret Manager reference for them. The token
+therefore exists in two places, the secret and the job, and anyone who can read
+the job (`cloudscheduler.jobs.get`) can read it. The private Cloud Run service
+and the dedicated invoker identity are the primary gate; the shared token is a
+second, weaker one. Give the job's service account `roles/run.invoker` on this
+service only, restrict who may read the job, and rotate by adding a secret
+version, updating the job, then deploying a new revision.
+
+```bash
+# 3. A dedicated caller identity with invoker on this one service
+gcloud iam service-accounts create finsignal-alerts-scheduler --project finsignal-api-aakash-2026
+gcloud run services add-iam-policy-binding finsignal-api-poc --project finsignal-api-aakash-2026 \
+  --region asia-south1 \
+  --member serviceAccount:finsignal-alerts-scheduler@finsignal-api-aakash-2026.iam.gserviceaccount.com \
+  --role roles/run.invoker
+
+# 4. The job. Create it paused, run it once by hand, then resume it.
+SERVICE_URL=https://finsignal-api-poc-saigcozo6q-el.a.run.app
+gcloud scheduler jobs create http finsignal-alerts-evaluate --project finsignal-api-aakash-2026 \
+  --location asia-south1 --schedule '*/5 * * * *' --time-zone Etc/UTC \
+  --uri "$SERVICE_URL/api/internal/alerts/evaluate" --http-method POST \
+  --oidc-service-account-email finsignal-alerts-scheduler@finsignal-api-aakash-2026.iam.gserviceaccount.com \
+  --oidc-token-audience "$SERVICE_URL" \
+  --headers "X-Scheduler-Token=$(gcloud secrets versions access latest --secret alerts-scheduler-token --project finsignal-api-aakash-2026)" \
+  --attempt-deadline 300s
+gcloud scheduler jobs pause finsignal-alerts-evaluate --project finsignal-api-aakash-2026 --location asia-south1
+```
+
+The five-minute cadence is a recommendation, not a requirement of the code. The
+evaluator treats a quote older than 20 minutes in session as stale and skips it
+(`src/services/alert_engine.freshness`), so a cadence much slower than that
+produces mostly skips. Cloud Scheduler is not enabled on the project as of
+2026-10-29 (`cloudscheduler.googleapis.com`), which is itself a project change.
+
+Verify, in this order: an unauthenticated request to the endpoint is `403` from
+Cloud Run; with an identity token but no or a wrong `X-Scheduler-Token` it is
+`403` from the application; with the secret unset it is `503`; through the
+website (`/api/internal/alerts/evaluate`) it is refused whatever header is sent: `401` from the
+Clerk gate when signed out (measured against a local production build on 2026-10-30),
+`404` from `backend-proxy.ts` for a signed-in caller (pinned by
+`dashboard/tests/backend-proxy.test.ts`), and the backend is never called. Only then run the job once and read the summary it returns
+(`evaluated`, `triggered`, `notifications`, `skipped`).
+
+Pause or delete the job to stop evaluation; stored alerts are untouched and a
+resumed alert starts from the next observation.

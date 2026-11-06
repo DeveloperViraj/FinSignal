@@ -1,0 +1,153 @@
+/**
+ * Provider health, as the interface states it.
+ *
+ * The backend's `health_state` is derived from the last events it saw. Two of
+ * its states need more precision before they are shown to a reader:
+ *
+ *   HEALTHY with zero requests — configured, but nothing has asked it anything
+ *   in this process. That is "idle", not evidence of health.
+ *   HEALTHY with local-limiter rejections — the vendor answers; our own pacing
+ *   held some calls back. Healthy, with that stated.
+ */
+
+export interface VendorSnapshot {
+  vendor: string
+  configured: boolean
+  cooling_down?: boolean
+  cooldown_remaining_seconds?: number
+  health_state?: string
+  requests: number
+  success_pct: number | null
+  failures: number
+  rate_limited: number
+  avg_latency_ms?: number | null
+  max_latency_ms?: number | null
+  last_error?: string | null
+  last_failure_class?: string | null
+  last_success_at?: number | null
+  last_attempt_at?: number | null
+  shared?: boolean
+  /** Operations whose latest call was refused by the plan (HTTP 403) while
+   *  the vendor kept answering others. Absent from older backends. */
+  restricted_operations?: string[]
+}
+
+export type HealthTone = 'pos' | 'warn' | 'neg' | 'muted' | 'info'
+
+export type HealthState =
+  | 'HEALTHY' | 'IDLE' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_FAILURE'
+  | 'NOT_ENTITLED' | 'TIMEOUT' | 'UNAVAILABLE' | 'COOLDOWN'
+  | 'NOT_CONFIGURED' | 'DEV_ONLY' | 'STALE' | 'DISABLED'
+
+export interface VendorHealth {
+  state: HealthState
+  tone: HealthTone
+  label: string
+  /** One line a reader can act on. Never a raw upstream error. */
+  note: string | null
+}
+
+const FAILURE_LABEL: Record<string, string> = {
+  rate_limited: 'rate limited by the vendor',
+  auth_failure: 'credential rejected',
+  not_entitled: 'plan does not include this data',
+  timeout: 'timed out',
+  upstream_failure: 'vendor returned an error',
+  parse_failure: 'response could not be parsed',
+  local_limiter: 'held back by local rate limit',
+  // Terminal 4xx answers (404, 422) as well as outright failures land here;
+  // the vendor usually answered, so "unreachable" was wrong for most of them.
+  unavailable: 'no usable answer',
+}
+
+export function failureLabel(cls: string | null | undefined): string | null {
+  if (!cls) return null
+  return FAILURE_LABEL[cls] ?? cls.replace(/_/g, ' ')
+}
+
+/**
+ * The upstream error with anything URL-shaped removed. Error strings from
+ * HTTP clients embed the request URL; that is diagnostic detail, not
+ * something to print in a table.
+ */
+export function sanitizeError(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const cleaned = raw
+    .replace(/\bfor url:?\s*\S+/gi, '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .replace(/[·:,-]\s*$/, '')
+    .trim()
+  return cleaned.length ? cleaned.slice(0, 140) : null
+}
+
+export function classifyVendor(v: VendorSnapshot): VendorHealth {
+  /* Disabled is checked first: the operator's switch holds whether or not a
+     credential is present, and it is the one thing to undo to bring it back. */
+  if (v.health_state === 'DISABLED') {
+    return { state: 'DISABLED', tone: 'muted', label: 'Disabled', note: 'Taken out of routing by the operator (PROVIDER_DISABLED)' }
+  }
+  if (!v.configured || v.health_state === 'NOT_CONFIGURED') {
+    return { state: 'NOT_CONFIGURED', tone: 'muted', label: 'Not configured', note: 'No credential in this deployment' }
+  }
+  if (v.health_state === 'DEV_ONLY') {
+    return { state: 'DEV_ONLY', tone: 'muted', label: 'Development only', note: 'Disabled outside local development' }
+  }
+  /* A refused credential is checked before the cooldown. The backend pauses a
+     vendor after it rejects the key, so `cooling_down` is true for exactly the
+     vendors this applies to, and the cooldown branch would label them
+     "Paused after repeated failures" — a transient-sounding state for a fault
+     that only the key's owner can fix. */
+  if (v.health_state === 'AUTH_FAILURE' || (v.cooling_down && v.last_failure_class === 'auth_failure')) {
+    const s = v.cooldown_remaining_seconds
+    return {
+      state: 'AUTH_FAILURE', tone: 'neg', label: 'Credential rejected',
+      note: `The vendor rejected the credential${s ? ` · next check in ${Math.ceil(s / 60)} min` : ''}`,
+    }
+  }
+  if (v.cooling_down || v.health_state === 'COOLDOWN') {
+    const s = v.cooldown_remaining_seconds
+    return {
+      state: 'COOLDOWN', tone: 'warn', label: 'Cooling down',
+      note: `Paused after repeated failures${s ? ` · retries in ${Math.ceil(s)}s` : ''}`,
+    }
+  }
+  switch (v.health_state) {
+    case 'AUTH_FAILURE':
+      return { state: 'AUTH_FAILURE', tone: 'neg', label: 'Credential rejected', note: 'The vendor rejected the credential' }
+    case 'NOT_ENTITLED':
+      return { state: 'NOT_ENTITLED', tone: 'warn', label: 'Not entitled', note: 'The current plan does not include this data' }
+    case 'RATE_LIMITED':
+      return {
+        state: 'RATE_LIMITED', tone: 'warn', label: 'Rate limited',
+        note: v.last_failure_class === 'local_limiter' ? 'Held back by the local rate limit' : 'The vendor is throttling requests',
+      }
+    case 'TIMEOUT':
+      return { state: 'TIMEOUT', tone: 'warn', label: 'Timing out', note: 'Recent requests exceeded the time budget' }
+    case 'STALE':
+      // Not a fault: nothing has been seen recently enough to say either way.
+      return { state: 'STALE', tone: 'info', label: 'Stale', note: 'Nothing observed inside the health window — not verified recently' }
+    case 'UNAVAILABLE':
+      return { state: 'UNAVAILABLE', tone: 'neg', label: 'Unavailable', note: failureLabel(v.last_failure_class) ?? 'Recent requests failed' }
+    case 'DEGRADED':
+      return {
+        state: 'DEGRADED', tone: 'warn', label: 'Degraded',
+        // A plan boundary says which data is excluded; a failure count would
+        // read as the vendor being unreliable when it is answering fine.
+        note: v.restricted_operations?.length
+          ? `Plan excludes ${v.restricted_operations.join(', ')} · other data answering`
+          : `${v.failures} of ${v.requests} requests failed`,
+      }
+    default:
+      break
+  }
+  if (v.requests === 0) {
+    return { state: 'IDLE', tone: 'info', label: 'Idle', note: 'Configured · not called since the server started' }
+  }
+  const throttled = v.rate_limited > 0 && v.last_failure_class === 'local_limiter'
+  return {
+    state: 'HEALTHY', tone: 'pos', label: 'Healthy',
+    note: throttled ? `${v.rate_limited} calls held back by the local rate limit` : null,
+  }
+}

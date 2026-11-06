@@ -1,0 +1,504 @@
+"""
+Market Intelligence Dashboard — "what is happening in the market?"
+
+Every number is real and sourced through the provider layer:
+  * Macro board: FRED series (current / previous / change / trend / updated /
+    one-line explanation per indicator).
+  * Breadth: index + VIX quotes, and a computable breadth score — the share
+    of the 11 SPDR sector ETFs trading above their 50-day average. (True
+    advance/decline counts and put/call ratios have no free source; rather
+    than fake them, we substitute a documented, computable proxy.)
+  * Sectors: 11 SPDR ETFs — strength (21d), momentum (63d), volatility,
+    verdict from the v2 scoring cut points. Constituent winners/losers need
+    membership data with no free source — omitted, not invented.
+  * Events: static public calendars (FOMC — Fed; CPI/PPI/Jobs — BLS release
+    schedule) with countdowns and *measured* historical SPY volatility around
+    each event type. ISM/PMI are proprietary (ISM) and therefore absent.
+
+Assembled response is cached for 15 minutes.
+"""
+
+from __future__ import annotations
+
+import copy
+import logging
+import threading
+import time
+from datetime import date, datetime, timezone
+from typing import Any, Optional
+
+from src import providers
+from src.services import macro_freshness
+from src.providers.parallel import map_concurrent, values
+from src.providers.validation import monthly_yoy
+from src.scoring.engine import map_verdict
+from src.scoring.fomc_calendar import FOMC_DECISION_DATES
+
+logger = logging.getLogger(__name__)
+
+CACHE_TTL_SECONDS = 900.0
+#: A dashboard assembled while part of it was unreadable is held for a fraction
+#: of the normal window: long enough to spare the vendors a rebuild per page
+#: view, short enough that a recovered source shows up in minutes rather than
+#: a quarter hour. One with nothing readable is not held at all.
+PARTIAL_TTL_SECONDS = 300.0
+_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_lock = threading.Lock()
+
+# ── FRED macro board (id, label, unit, explanation) ──────────────────────────
+
+MACRO_SERIES: list[dict[str, str]] = [
+    {"id": "FEDFUNDS", "label": "Federal Funds Rate", "unit": "%",
+     "explain": "The Fed's policy rate — the anchor for all US borrowing costs."},
+    {"id": "DGS10", "label": "10-Year Treasury", "unit": "%",
+     "explain": "Long-end yield: growth and inflation expectations plus term premium."},
+    {"id": "DGS2", "label": "2-Year Treasury", "unit": "%",
+     "explain": "Short-end yield: the market's read on Fed policy over two years."},
+    {"id": "T10Y2Y", "label": "10Y–2Y Spread", "unit": "%",
+     "explain": "Yield-curve slope. Inversion (below zero) has preceded recessions."},
+    {"id": "DFII10", "label": "10-Year Real Yield", "unit": "%",
+     "explain": "Inflation-adjusted yield (TIPS). The true cost of capital."},
+    {"id": "DTWEXBGS", "label": "Dollar Index (Broad)", "unit": "",
+     "explain": "Trade-weighted dollar. Strength tightens global financial conditions."},
+    {"id": "CPIAUCSL", "label": "CPI", "unit": "index", "yoy": "true",
+     "explain": "Headline consumer inflation, shown year-over-year."},
+    {"id": "CPILFESL", "label": "Core CPI", "unit": "index", "yoy": "true",
+     "explain": "Inflation excluding food and energy — the Fed's cleaner read."},
+    {"id": "PPIACO", "label": "PPI", "unit": "index", "yoy": "true",
+     "explain": "Producer prices — pipeline pressure that reaches consumers later."},
+    {"id": "UNRATE", "label": "Unemployment", "unit": "%",
+     "explain": "Labor-market slack. Rising unemployment usually precedes easing."},
+    {"id": "A191RL1Q225SBEA", "label": "GDP Growth (q/q ann.)", "unit": "%",
+     "explain": "Output growth, quarterly annualized."},
+    {"id": "RSAFS", "label": "Retail Sales", "unit": "index", "yoy": "true",
+     "explain": "Consumer spending pulse, shown year-over-year."},
+    {"id": "UMCSENT", "label": "Consumer Sentiment", "unit": "",
+     "explain": "University of Michigan survey — households' mood about the economy."},
+    {"id": "HOUST", "label": "Housing Starts", "unit": "k",
+     "explain": "New residential construction — the most rate-sensitive activity gauge."},
+    {"id": "EIA_WTI_M", "label": "WTI Crude Oil", "unit": "$/bbl",
+     "explain": "Cushing spot price, monthly average — energy cost context from EIA."},
+    {"id": "TSY_AVG_RATE", "label": "Avg. Rate on Treasury Debt", "unit": "%", "digits": "3",
+     "explain": "Average interest rate the Treasury pays on its marketable debt, monthly — "
+                "the federal cost of borrowing, from Treasury Fiscal Data."},
+    {"id": "ECB_DFR", "label": "ECB Deposit Rate", "unit": "%",
+     "explain": "The ECB's policy floor, recorded at each decision that changed it — "
+                "European monetary context from the ECB Data Portal."},
+    {"id": "ECB_EURUSD", "label": "EUR/USD", "unit": "", "digits": "4",
+     "explain": "Monthly average of the ECB euro reference rate, in dollars per euro."},
+    {"id": "WB_GDP_WORLD", "label": "World GDP Growth", "unit": "%",
+     "explain": "Annual real GDP growth of the world economy, from the World Bank."},
+]
+
+SECTOR_ETFS: list[tuple[str, str]] = [
+    ("XLK", "Technology"), ("XLV", "Healthcare"), ("XLE", "Energy"),
+    ("XLF", "Financials"), ("XLU", "Utilities"), ("XLI", "Industrials"),
+    ("XLP", "Consumer Defensive"), ("XLY", "Consumer Cyclical"),
+    ("XLC", "Communication"), ("XLB", "Materials"), ("XLRE", "Real Estate"),
+]
+
+INDEX_TICKERS = ["SPY", "QQQ", "DIA", "IWM", "^VIX"]
+
+# BLS 2026 release schedule (public: bls.gov/schedule/news_release) — H2 2026.
+# Static like the FOMC calendar; refresh annually.
+BLS_EVENTS_2026: list[tuple[str, str, str]] = [
+    ("2026-07-14", "CPI", "June CPI release"),
+    ("2026-07-16", "PPI", "June PPI release"),
+    ("2026-08-07", "Jobs Report", "July employment situation"),
+    ("2026-08-12", "CPI", "July CPI release"),
+    ("2026-08-14", "PPI", "July PPI release"),
+    ("2026-09-04", "Jobs Report", "August employment situation"),
+    ("2026-09-11", "CPI", "August CPI release"),
+    ("2026-09-16", "PPI", "August PPI release"),
+    ("2026-10-02", "Jobs Report", "September employment situation"),
+    ("2026-10-14", "CPI", "September CPI release"),
+    ("2026-10-16", "PPI", "September PPI release"),
+    ("2026-11-06", "Jobs Report", "October employment situation"),
+    ("2026-11-12", "CPI", "October CPI release"),
+    ("2026-11-17", "PPI", "October PPI release"),
+    ("2026-12-04", "Jobs Report", "November employment situation"),
+    ("2026-12-10", "CPI", "November CPI release"),
+    ("2026-12-15", "PPI", "November PPI release"),
+]
+
+EVENT_IMPORTANCE = {"FOMC": "high", "CPI": "high", "Jobs Report": "high", "PPI": "medium", "GDP": "medium"}
+
+
+# ── Macro board ───────────────────────────────────────────────────────────────
+
+def _macro_card(meta: dict[str, str]) -> Optional[dict[str, Any]]:
+    result = providers.macro.get_series_snapshot(meta["id"], count=15)
+    if not result.ok or result.stale or not result.data:
+        return None
+    observations = result.data
+
+    yoy = meta.get("yoy") == "true"
+    if yoy:
+        # A missing prior year cannot turn an inflation rate into a CPI index.
+        def yoy_at(offset: int) -> Optional[float]:
+            return monthly_yoy(observations, offset)
+
+        current, previous = yoy_at(0), yoy_at(1)
+        unit = "% y/y"
+        trend = [yoy_at(i) for i in range(5, -1, -1)]
+        trend = [value for value in trend if value is not None]
+    else:
+        # Precision is the series' own: an exchange rate rounded to cents
+        # reads as unchanged through most of a month's movement.
+        places = int(meta.get("digits", "2"))
+        current = round(observations[-1][1], places)
+        previous = round(observations[-2][1], places) if len(observations) >= 2 else None
+        unit = meta["unit"]
+        trend = [round(value, places) for _, value in observations[-6:]]
+
+    if current is None:
+        return None
+    places = 2 if yoy else int(meta.get("digits", "2"))
+    change = round(current - previous, places) if previous is not None else None
+    return {
+        "id": meta["id"],
+        "label": meta["label"],
+        "value": current,
+        "previous": previous,
+        "change": change,
+        "direction": ("up" if change > 0 else "down" if change < 0 else "flat") if change is not None else "flat",
+        "unit": unit,
+        "trend": trend,
+        "updated": observations[-1][0],
+        "digits": places,
+        "explain": meta["explain"],
+        "source": result.source,
+    }
+
+
+def _gather(fn, items, label: str, describe) -> list[Any]:
+    """Fan out `fn` over `items`, keeping per-item diagnostics.
+
+    `map_concurrent` isolates failures but only knows an item by position;
+    the loops this replaced logged *which* series or symbol failed, and that
+    is the first thing anyone debugging a half-empty dashboard wants.
+    """
+    outcomes = map_concurrent(fn, items, label=label)
+    for item, outcome in zip(items, outcomes):
+        if not outcome.ok:
+            logger.warning("%s failed: %s (%s)", label, describe(item), outcome.error)
+    return values(outcomes)
+
+
+def _macro_board() -> dict[str, Any]:
+    cards = _gather(_macro_card, MACRO_SERIES, "macro", lambda meta: meta["id"])
+
+    macro_result = providers.macro.get_macro()
+    observation_dates = macro_result.data.observation_dates if macro_result.ok else {}
+    # An observation can be fetched this second and still be months old: the
+    # same age gate the research route applies, from the same definition.
+    old_fields = macro_freshness.stale_fields(observation_dates)
+    measurable = (macro_result.ok and not macro_result.stale
+                  and macro_result.data.yield_spread is not None
+                  and macro_result.data.inflation_rate is not None
+                  and not any(f in macro_freshness.GATING_FIELDS for f in old_fields))
+    regime: dict[str, Any] = {
+        "available": measurable, "status": "UNAVAILABLE",
+        "source": macro_result.source, "stale": macro_result.stale,
+        "fetched_at": macro_result.fetched_at.isoformat(),
+        "observation_dates": observation_dates,
+    }
+    if old_fields:
+        regime["stale_fields"] = old_fields
+    if measurable:
+        snapshot = macro_result.data
+        from src.models import MacroIndicators
+        from src.risk_analysis import FinSignalRiskEngine
+
+        assessment = FinSignalRiskEngine().calculate_multiplier(MacroIndicators(
+            yield_spread=snapshot.yield_spread,
+            inflation_rate=snapshot.inflation_rate,
+            fed_funds_rate=snapshot.fed_funds_rate,
+        ))
+        regime.update({
+            "risk_multiplier": assessment.risk_multiplier,
+            "status": assessment.status.value,
+            "yield_curve": "inverted" if assessment.yield_curve_inverted else "normal",
+            "recession_warning": assessment.recession_warning,
+            "explain": "SRM composes curve inversion (+0.3), CPI above 4% (+0.2) and "
+                       "Fed funds above 5% (+0.1) into one dampening multiplier.",
+        })
+    return {"cards": cards, "regime": regime, "note": "ISM/PMI are proprietary surveys with no free source and are intentionally absent."}
+
+
+# ── Breadth & sectors ─────────────────────────────────────────────────────────
+
+def _sector_row(symbol: str, name: str) -> Optional[dict[str, Any]]:
+    result = providers.market_data.get_series(symbol, "1y")
+    if not result.ok or len(result.data.bars) < 70:
+        return None
+    bars = result.data.bars
+    closes = [bar.close for bar in bars]
+    price = closes[-1]
+    ma50 = sum(closes[-50:]) / 50
+    # Guarded division, even though `PriceSeries` now rejects non-positive
+    # closes at the provider boundary. This crashed four of eleven sector
+    # rows with `float division by zero` when a fallback vendor returned a
+    # zero close, and defence in depth is cheap here: the alternative is a
+    # whole sector silently vanishing from the board again if any future
+    # path constructs bars without going through validation.
+    daily = [
+        closes[i] / closes[i - 1] - 1
+        for i in range(max(1, len(closes) - 63), len(closes))
+        if closes[i - 1]
+    ]
+    if not daily:
+        return None
+    mean = sum(daily) / len(daily)
+    volatility = (sum((r - mean) ** 2 for r in daily) / max(1, len(daily) - 1)) ** 0.5 * (252 ** 0.5)
+    strength = result.data.pct_change(21)
+    momentum = result.data.pct_change(63)
+    composite = ((strength or 0) / 100 * 2 + (momentum or 0) / 100) / 2  # simple, documented blend
+    return {
+        "symbol": symbol,
+        "name": name,
+        "price": round(price, 2),
+        "strength_21d": strength,
+        "momentum_63d": momentum,
+        "volatility": round(volatility * 100, 1),
+        "above_50d": price > ma50,
+        "verdict": map_verdict(max(-0.99, min(0.99, composite))).value,
+        "source": result.source,
+        # Retained for `_breadth_history`, stripped before the response.
+        # The series is already in hand; recomputing breadth for past dates
+        # from it costs nothing and needs no persistence layer.
+        "_closes": [(bar.date, bar.close) for bar in bars],
+    }
+
+
+def _index_row(symbol: str) -> Optional[dict[str, Any]]:
+    series = providers.market_data.get_series(symbol, "3mo")
+    if not series.ok or len(series.data.bars) < 6:
+        return None
+    bars = series.data.bars
+    return {
+        "symbol": symbol.replace("^", ""),
+        "price": round(bars[-1].close, 2),
+        "change_1d": series.data.pct_change(1),
+        "change_1w": series.data.pct_change(5),
+        "source": series.source,
+    }
+
+
+#: Trading days of breadth history returned. ~4.5 months — long enough to
+#: show a regime change, short enough that every sector ETF has the 50 prior
+#: bars each point needs.
+HISTORY_DAYS = 90
+
+
+def _breadth_history(sectors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Breadth score for each of the last `HISTORY_DAYS` trading days.
+
+    Real history, not a stored snapshot. Each sector's daily closes are
+    already fetched for the current reading, so the share of sectors above
+    their own 50-day average on any past date is derivable immediately —
+    no persistence, no waiting for data to accumulate, no extra vendor call.
+
+    Each point uses only the 50 closes preceding it, so a date's score is
+    what it would have been on that date rather than a value computed with
+    hindsight.
+    """
+    series = [row["_closes"] for row in sectors if row.get("_closes")]
+    if not series:
+        return []
+
+    # Align on dates every sector actually traded; ETFs share a calendar, so
+    # this drops nothing in practice and guards against a vendor gap.
+    common = set.intersection(*(set(date for date, _ in rows) for rows in series))
+    if len(common) < 51:
+        return []
+    dates = sorted(common)[-(HISTORY_DAYS + 50):]
+
+    lookup = [{date: close for date, close in rows} for rows in series]
+    history: list[dict[str, Any]] = []
+    for index in range(50, len(dates)):
+        window = dates[index - 50:index + 1]
+        above = 0
+        counted = 0
+        for closes in lookup:
+            values = [closes[day] for day in window if day in closes]
+            if len(values) < 51:
+                continue
+            counted += 1
+            if values[-1] > sum(values[-51:-1]) / 50:
+                above += 1
+        if counted:
+            history.append({
+                "date": dates[index],
+                "score": round(above / counted * 100),
+            })
+    return history[-HISTORY_DAYS:]
+
+
+def _breadth_and_sectors() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    sectors = _gather(
+        lambda pair: _sector_row(*pair), SECTOR_ETFS, "sectors", lambda pair: pair[0]
+    )
+    sectors.sort(key=lambda row: row.get("strength_21d") or -999, reverse=True)
+
+    indexes = _gather(_index_row, INDEX_TICKERS, "indexes", lambda symbol: symbol)
+
+    history = _breadth_history(sectors)
+    for row in sectors:
+        closes = row.pop("_closes", None) or []
+        # 90 trading days of closes, rebased to 100 at the start so eleven
+        # sectors trading between $30 and $250 render on one shared scale.
+        # Already fetched for the strength calculation; sending it turns the
+        # sector list from static numbers into an actual market map.
+        tail = [close for _, close in closes[-HISTORY_DAYS:]]
+        row["history"] = (
+            [round(close / tail[0] * 100, 2) for close in tail]
+            if tail and tail[0] else []
+        )
+
+    above = sum(1 for row in sectors if row["above_50d"])
+    breadth_score = round(above / len(sectors) * 100) if sectors else None
+    breadth = {
+        "indexes": indexes,
+        # No readable sector is "unknown", not "0 of 0 above the 50-day": the
+        # home band printed exactly that when the vendors were down.
+        "sectors_above_50d": above if sectors else None,
+        "sector_count": len(sectors) if sectors else None,
+        # How many were asked for, so "5 of 7" can say it is 7 of 11.
+        "sector_expected": len(SECTOR_ETFS),
+        "breadth_score": breadth_score,
+        # Real history, recomputed from the same price series — not a stored
+        # snapshot, so it is available in full on the very first request.
+        "history": history,
+        "explain": "Breadth score = share of the 11 SPDR sector ETFs above their 50-day "
+                   "average. Advance/decline counts and put/call ratios have no free "
+                   "data source, so this computable proxy is used instead of fake numbers. "
+                   "History is recomputed from each sector's own price series, so every "
+                   "past point uses only the 50 closes preceding it.",
+        "leadership": sectors[0]["name"] if sectors else None,
+        "laggard": sectors[-1]["name"] if sectors else None,
+    }
+    return breadth, sectors
+
+
+# ── Events ────────────────────────────────────────────────────────────────────
+
+def _event_volatility(spy_bars: list, event_dates: list[date], window: int = 1) -> Optional[float]:
+    """Mean absolute SPY move (%) on historical event days — measured, not asserted."""
+    if not spy_bars:
+        return None
+    by_date = {bar.date: index for index, bar in enumerate(spy_bars)}
+    moves = []
+    for event_day in event_dates:
+        index = by_date.get(event_day.isoformat())
+        if index and index >= window:
+            prev_close = spy_bars[index - window].close
+            if prev_close:
+                moves.append(abs(spy_bars[index].close / prev_close - 1) * 100)
+    return round(sum(moves) / len(moves), 2) if moves else None
+
+
+def _events(today: date) -> list[dict[str, Any]]:
+    spy = providers.market_data.get_series("SPY", "1y")
+    spy_bars = spy.data.bars if spy.ok else []
+
+    past_fomc = [d for d in FOMC_DECISION_DATES if d < today]
+    fomc_vol = _event_volatility(spy_bars, past_fomc)
+
+    events: list[dict[str, Any]] = []
+    for decision in FOMC_DECISION_DATES:
+        if decision >= today:
+            events.append({
+                "date": decision.isoformat(), "type": "FOMC",
+                "title": "FOMC rate decision",
+                "importance": EVENT_IMPORTANCE["FOMC"],
+                "days_away": (decision - today).days,
+                "historical_move": fomc_vol,
+                "explain": "Historical move = mean absolute SPY change on past decision days this year.",
+            })
+    for date_str, kind, title in BLS_EVENTS_2026:
+        event_day = date.fromisoformat(date_str)
+        if event_day >= today:
+            events.append({
+                "date": date_str, "type": kind, "title": title,
+                "importance": EVENT_IMPORTANCE.get(kind, "medium"),
+                "days_away": (event_day - today).days,
+                "historical_move": None,
+                "explain": "BLS release schedule (bls.gov).",
+            })
+    events.sort(key=lambda event: event["date"])
+    return events[:10]
+
+
+# ── Assembly ──────────────────────────────────────────────────────────────────
+
+def _coverage(macro: dict[str, Any], breadth: dict[str, Any], sectors: list) -> dict[str, Any]:
+    """What was asked for and what came back, per section.
+
+    The sections used to report only what they held, so a board missing eight
+    of nineteen macro series looked like a board with eleven. Expected counts
+    sit beside the available ones so a reader (and a test) can tell.
+    """
+    return {
+        "macro_cards": {"available": len(macro.get("cards", [])), "expected": len(MACRO_SERIES)},
+        "sectors": {"available": len(sectors), "expected": len(SECTOR_ETFS)},
+        "indexes": {"available": len(breadth.get("indexes", [])), "expected": len(INDEX_TICKERS)},
+        "regime": bool(macro.get("regime", {}).get("available")),
+    }
+
+
+def _overall_status(coverage: dict[str, Any]) -> str:
+    """complete | partial | unavailable, from the coverage and nothing else."""
+    parts = [
+        coverage["macro_cards"]["available"] >= coverage["macro_cards"]["expected"],
+        coverage["sectors"]["available"] >= coverage["sectors"]["expected"],
+        coverage["indexes"]["available"] >= coverage["indexes"]["expected"],
+        coverage["regime"],
+    ]
+    anything = (
+        coverage["macro_cards"]["available"] or coverage["sectors"]["available"]
+        or coverage["indexes"]["available"] or coverage["regime"]
+    )
+    if not anything:
+        return "unavailable"
+    return "complete" if all(parts) else "partial"
+
+
+def get_dashboard() -> dict[str, Any]:
+    now = time.time()
+    with _lock:
+        entry = _cache.get("dashboard")
+        if entry and entry[0] > now:
+            # A copy, with the flag set on the copy: the stored payload is
+            # shared by every reader, and marking it cached on the shared
+            # object would mark it for the request that built it, too.
+            return {**copy.deepcopy(entry[1]), "cached": True}
+
+    started = time.time()
+    breadth, sectors = _breadth_and_sectors()
+    macro = _macro_board()
+    coverage = _coverage(macro, breadth, sectors)
+    status = _overall_status(coverage)
+    payload = {
+        "macro": macro,
+        "breadth": breadth,
+        "sectors": sectors,
+        "events": _events(datetime.now(timezone.utc).date()),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cached": False,
+        # Whether the picture is whole. The events block is a published
+        # calendar and says nothing about provider health, so it is not part of
+        # this.
+        "status": status,
+        "coverage": coverage,
+    }
+    logger.info("dashboard assembled in %.1fs (%s)", time.time() - started, status)
+    if status != "unavailable":
+        ttl = CACHE_TTL_SECONDS if status == "complete" else PARTIAL_TTL_SECONDS
+        with _lock:
+            _cache["dashboard"] = (now + ttl, copy.deepcopy(payload))
+    return payload
+
+
+def reset_for_tests() -> None:
+    _cache.clear()

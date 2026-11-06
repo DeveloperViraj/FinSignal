@@ -1,0 +1,321 @@
+/**
+ * The analytical table.
+ *
+ * Sorting, filtering, column visibility, density and keyboard navigation, in
+ * one component, because a research product lives in tables and every one of
+ * them needs the same affordances. A page that reimplements sorting is a page
+ * that sorts differently from the one beside it.
+ *
+ * Sorting is null-aware and null-last in both directions. An absent value is
+ * not a small value, and letting it sort as one puts unmeasured rows at the top
+ * of an ascending risk column — which reads as the safest holdings.
+ */
+'use client'
+
+import { useMemo, useState, type ReactNode } from 'react'
+
+import { useChartCursor } from './ChartCursor'
+
+export interface DataColumn<T> {
+  key: string
+  header: string
+  /** Unit qualifier under the header. */
+  unit?: string
+  numeric?: boolean
+  width?: string
+  /** Sort key. Return null for "not recorded" — sorted last either way. */
+  sort?: (row: T) => number | string | null
+  /** Free-text search target for this column. */
+  text?: (row: T) => string
+  render: (row: T) => ReactNode
+  /** Hidden by default; revealed through the column control. */
+  optional?: boolean
+}
+
+type Direction = 'asc' | 'desc'
+
+export interface RowAction<T> {
+  label: string
+  /** Shown on the button. One or two characters. */
+  glyph: string
+  onAct: (row: T) => void
+  title?: string
+  /** Single key that fires this action on the focused row. Optional. */
+  key?: string
+}
+
+export function DataTable<T>({
+  columns, rows, rowKey, density = 'compact', onSelect, selectedKey,
+  filterPlaceholder = 'filter', empty, initialSort, toolbar, actions, focusKey,
+}: {
+  columns: DataColumn<T>[]
+  rows: T[]
+  rowKey: (row: T) => string
+  density?: 'compact' | 'normal' | 'relaxed'
+  onSelect?: (row: T) => void
+  selectedKey?: string
+  filterPlaceholder?: string
+  empty?: ReactNode
+  initialSort?: { key: string; direction: Direction }
+  toolbar?: ReactNode
+  /**
+   * Per-row actions, revealed on hover in a column that is always present.
+   *
+   * Always present matters: a column that appears on hover reflows the row
+   * under the pointer, which moves the cell the reader was about to click.
+   * The column holds its width and only its contents fade in.
+   */
+  actions?: RowAction<T>[]
+  /**
+   * Ties this table to the shared series focus. Given a row, return the name
+   * of the series it corresponds to in the charts on this screen. Pointing at
+   * a row lifts that series out of every chart, and vice versa.
+   *
+   * The name must be the one the chart uses. Focus matches by name rather than
+   * position precisely so that a table sorted differently from the chart still
+   * points at the same thing.
+   */
+  focusKey?: (row: T) => string | null
+}) {
+  const [query, setQuery] = useState('')
+  const cursor = useChartCursor()
+  const [sort, setSort] = useState<{ key: string; direction: Direction } | null>(initialSort ?? null)
+  const [hidden, setHidden] = useState<Set<string>>(
+    () => new Set(columns.filter((c) => c.optional).map((c) => c.key)),
+  )
+  const [columnsOpen, setColumnsOpen] = useState(false)
+
+  const visible = useMemo(() => columns.filter((c) => !hidden.has(c.key)), [columns, hidden])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((r) =>
+      columns.some((c) => {
+        const text = c.text?.(r)
+        if (text) return text.toLowerCase().includes(q)
+        const s = c.sort?.(r)
+        return typeof s === 'string' && s.toLowerCase().includes(q)
+      }),
+    )
+  }, [rows, columns, query])
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered
+    const col = columns.find((c) => c.key === sort.key)
+    if (!col?.sort) return filtered
+    const dir = sort.direction === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      const av = col.sort!(a)
+      const bv = col.sort!(b)
+      // Null last in both directions: an absent value is not a small one.
+      if (av === null && bv === null) return 0
+      if (av === null) return 1
+      if (bv === null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+      return String(av).localeCompare(String(bv)) * dir
+    })
+  }, [filtered, sort, columns])
+
+  const toggleSort = (key: string) => {
+    setSort((s) =>
+      s?.key !== key
+        ? { key, direction: 'desc' }
+        : s.direction === 'desc'
+          ? { key, direction: 'asc' }
+          : null,
+    )
+  }
+
+  const cls = `sys-table${density === 'compact' ? ' sys-table--compact' : density === 'relaxed' ? ' sys-table--relaxed' : ''}`
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 'var(--d-2)',
+        padding: 'var(--d-2) var(--d-3)', borderBottom: '1px solid var(--rule)',
+        background: 'var(--p-sunken)', flexWrap: 'wrap',
+      }}>
+        <input
+          className="sys-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={filterPlaceholder}
+          aria-label="Filter rows"
+          style={{ width: 150 }}
+        />
+        <span className="sys-meta">
+          {sorted.length === rows.length ? `${rows.length} rows` : `${sorted.length} of ${rows.length}`}
+        </span>
+        {onSelect ? (
+          <span className="sys-meta sys-kbd-hint" aria-hidden>
+            j k move · ⏎ open{actions?.some((a) => a.key) ? ` · ${actions.filter((a) => a.key).map((a) => `${a.key} ${a.label.toLowerCase()}`).join(' · ')}` : ''}
+          </span>
+        ) : null}
+        {sort ? (
+          <button className="sys-btn" onClick={() => setSort(null)}>clear sort</button>
+        ) : null}
+        {query ? (
+          <button className="sys-btn" onClick={() => setQuery('')}>clear filter</button>
+        ) : null}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--d-2)', alignItems: 'center', position: 'relative' }}>
+          {toolbar}
+          {columns.some((c) => c.optional) || columns.length > 4 ? (
+            <button className="sys-btn" aria-expanded={columnsOpen} onClick={() => setColumnsOpen((v) => !v)}>
+              columns
+            </button>
+          ) : null}
+          {columnsOpen ? (
+            <div style={{
+              position: 'absolute', top: '100%', right: 0, zIndex: 'var(--z-menu)', marginTop: 4,
+              background: 'var(--p-panel)', border: '1px solid var(--rule-strong)',
+              padding: 'var(--d-2)', minWidth: 180, display: 'flex', flexDirection: 'column', gap: 2,
+            }}>
+              {columns.map((c) => (
+                <label key={c.key} style={{ display: 'flex', gap: 'var(--d-2)', alignItems: 'center', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!hidden.has(c.key)}
+                    onChange={() => setHidden((h) => {
+                      const next = new Set(h)
+                      if (next.has(c.key)) next.delete(c.key)
+                      else next.add(c.key)
+                      return next
+                    })}
+                  />
+                  {c.header}
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div style={{ padding: 'var(--d-5)', color: 'var(--ink-faint)', fontSize: 'var(--t-meta)', fontFamily: 'var(--font-mono)' }}>
+          {empty ?? (query ? `No row matches “${query}”.` : 'No rows.')}
+        </div>
+      ) : (
+        <div className="sys-scroll-x">
+          <table className={cls}>
+            <thead>
+              <tr>
+                {/* The row-actions column has a cell in every body row, so it
+                    needs a header cell too. Without one the browser lines each
+                    value up under the header to its left, and a reader sees net
+                    Sharpe sitting under MAX DD — every number in the table
+                    labelled as the wrong statistic. */}
+                {actions?.length ? (
+                  <th className="sys-actions-col" scope="col">
+                    <span className="sys-sr-only">Row actions</span>
+                  </th>
+                ) : null}
+                {visible.map((c) => {
+                  const active = sort?.key === c.key
+                  return (
+                    <th key={c.key} className={c.numeric ? 'num' : undefined} style={c.width ? { width: c.width } : undefined} scope="col"
+                        aria-sort={active ? (sort!.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+                      {c.sort ? (
+                        <span
+                          className="sys-th-sort sys-focusable"
+                          role="button"
+                          tabIndex={0}
+                          data-sorted={active ? sort!.direction : undefined}
+                          onClick={() => toggleSort(c.key)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort(c.key) } }}
+                        >
+                          {c.header}
+                          <span className="caret" aria-hidden>{active ? (sort!.direction === 'asc' ? '▲' : '▼') : '▾'}</span>
+                        </span>
+                      ) : c.header}
+                      {c.unit ? <span className="unit">{c.unit}</span> : null}
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row, index) => {
+                const key = rowKey(row)
+                const focus = focusKey?.(row) ?? null
+                return (
+                  <tr
+                    key={key}
+                    data-selected={selectedKey === key}
+                    // A selectable row says which one is selected; the data
+                    // attribute only styled it, so a screen reader heard a
+                    // list of identical rows.
+                    aria-current={onSelect && selectedKey === key ? 'true' : undefined}
+                    data-focus={focus !== null && focus === cursor.focus ? '' : undefined}
+                    onPointerEnter={focus === null ? undefined : () => cursor.setFocus(focus)}
+                    onPointerLeave={focus === null ? undefined : () => cursor.setFocus(null)}
+                    tabIndex={onSelect ? 0 : undefined}
+                    style={onSelect ? { cursor: 'pointer' } : undefined}
+                    onClick={onSelect ? () => onSelect(row) : undefined}
+                    onKeyDown={(e) => {
+                      // j/k alongside the arrows. A researcher who lives in a
+                      // terminal reaches for those without thinking, and the
+                      // arrows alone make the table feel like a web page.
+                      const down = e.key === 'ArrowDown' || e.key === 'j'
+                      const up = e.key === 'ArrowUp' || e.key === 'k'
+                      const rows = e.currentTarget.parentElement?.children
+
+                      if (down || up) {
+                        e.preventDefault()
+                        const next = rows?.[index + (down ? 1 : -1)] as HTMLElement | undefined
+                        next?.focus()
+                        return
+                      }
+                      if (e.key === 'Home' || e.key === 'g') {
+                        e.preventDefault()
+                        ;(rows?.[0] as HTMLElement | undefined)?.focus()
+                        return
+                      }
+                      if (e.key === 'End' || e.key === 'G') {
+                        e.preventDefault()
+                        ;(rows?.[rows.length - 1] as HTMLElement | undefined)?.focus()
+                        return
+                      }
+                      if (!onSelect) return
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(row) }
+                      // A shortcut only fires where the action exists. A key
+                      // that silently does nothing is worse than no key.
+                      if (actions?.length) {
+                        const shortcut = actions.find(
+                          (a) => a.key && a.key.toLowerCase() === e.key.toLowerCase(),
+                        )
+                        if (shortcut) { e.preventDefault(); shortcut.onAct(row) }
+                      }
+                    }}
+                  >
+                    {actions?.length ? (
+                      <td className="sys-actions-col">
+                        <span className="sys-row-actions">
+                          {actions.map((a) => (
+                            <button
+                              key={a.label}
+                              type="button"
+                              className="sys-row-action"
+                              title={a.key ? `${a.title ?? a.label}  (${a.key})` : (a.title ?? a.label)}
+                              aria-label={a.label}
+                              onClick={(e) => { e.stopPropagation(); a.onAct(row) }}
+                            >
+                              {a.glyph}
+                            </button>
+                          ))}
+                        </span>
+                      </td>
+                    ) : null}
+                    {visible.map((c) => (
+                      <td key={c.key} className={c.numeric ? 'num' : undefined}>{c.render(row)}</td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,751 @@
+'use client'
+
+import { Badge } from '@/components/system'
+import CompanyMark from '@/components/ui/CompanyMark'
+import WorkBoot from '@/components/ui/WorkBoot'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+
+import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
+import { Segmented } from '@/components/ui/Controls'
+import { computeLayout, viewBoxFor, type LayoutNode } from '@/lib/graph/layout'
+import { logoSources } from '@/lib/identity'
+import { EDGE_LABELS } from '@/lib/knowledge'
+import { emptySnapshot, recentSnapshot, subscribeSymbols } from '@/lib/symbols'
+import {
+  addNote,
+  captureSnapshot,
+  createSession,
+  emptyWorkspaceState,
+  flushWorkspace,
+  onSaveStateChange,
+  openSession,
+  recordActivity,
+  updateWorkspace,
+  type ResearchSession,
+  type WorkspaceState,
+} from '@/lib/sessions'
+
+interface RawNode { id: string; type: string; label: string; route?: string | null; description?: string | null; metadata?: Record<string, string> }
+interface RawEdge { source_id: string; target_id: string; type: string; confidence: number; provider: string; observed_at?: string }
+interface Analytics {
+  nodes: number; edges: number; density: number; avg_confidence: number
+  node_types: Record<string, number>; edge_types: Record<string, number>
+  provider_coverage: Record<string, number>
+  most_connected: Array<{ id: string; label: string; type: string; degree: number }>
+}
+interface Workspace {
+  /** `unavailable`: no requested company could be looked up, so an empty graph
+   *  says nothing. `partial`: some could not (named in `unavailable_symbols`). */
+  status?: 'complete' | 'partial' | 'unavailable'
+  unavailable_symbols?: string[]
+  roots: string[]; nodes: RawNode[]; edges: RawEdge[]; analytics: Analytics
+  shared: Array<{ node: RawNode; connects_to: string[] }>
+}
+
+const TYPE_COLOR: Record<string, string> = {
+  company: 'var(--accent)', person: 'var(--e-warn)', product: 'var(--e-pos)',
+  subsidiary: 'var(--ink-muted)', industry: 'var(--ink-muted)', technology: 'var(--e-pos)',
+  country: 'var(--ink-faint)', exchange: 'var(--ink-faint)',
+}
+const color = (type: string) => TYPE_COLOR[type] ?? 'var(--ink-muted)'
+
+/** Entity type is carried by shape as well as colour, so it survives a
+ *  colour-blind reader and a monochrome print: companies are circles,
+ *  people rings, products and technologies squares, places and categories
+ *  diamonds. */
+function NodeShape({ type, r, fill, selected }: { type: string; r: number; fill: string; selected: boolean }) {
+  const stroke = selected ? 'var(--ink)' : 'none'
+  const opacity = selected ? 1 : 0.85
+  if (type === 'person') {
+    return <circle r={r} fill="var(--p-base)" stroke={fill} strokeWidth={Math.max(1.5, r * 0.45)} opacity={opacity} />
+  }
+  if (type === 'product' || type === 'technology') {
+    return <rect x={-r} y={-r} width={r * 2} height={r * 2} rx={r * 0.3} fill={fill} opacity={opacity} stroke={stroke} strokeWidth={1.5} />
+  }
+  if (type === 'industry' || type === 'country' || type === 'exchange') {
+    return <rect x={-r * 0.85} y={-r * 0.85} width={r * 1.7} height={r * 1.7} fill={fill} opacity={opacity} transform="rotate(45)" stroke={stroke} strokeWidth={1.5} />
+  }
+  if (type === 'subsidiary') {
+    return <circle r={r} fill="var(--p-base)" stroke={fill} strokeWidth={1.4} strokeDasharray="2 1.5" opacity={opacity} />
+  }
+  return <circle r={r} fill={fill} opacity={opacity} stroke={stroke} strokeWidth={1.5} />
+}
+
+const TYPE_NAME: Record<string, string> = {
+  company: 'Company', person: 'Person', product: 'Product', technology: 'Technology',
+  subsidiary: 'Subsidiary', industry: 'Industry', country: 'Country', exchange: 'Exchange',
+}
+
+/** The logo for a company node, or '' for everything a logo would be a lie
+ *  about. Node ids are `type:key`, and for companies the key is the ticker —
+ *  so this reads an identity the graph already carries rather than joining
+ *  against anything. */
+function logoHref(node: LayoutNode): string {
+  if (node.type !== 'company') return ''
+  const ticker = node.id.split(':')[1]
+  if (!ticker) return ''
+  return logoSources(ticker)[0] ?? ''
+}
+
+/** A node id reduced to something legal in an SVG id attribute. Ids contain
+ *  a colon, which is valid in HTML5 but breaks `url(#…)` selector parsing. */
+const slug = (id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '-')
+
+/**
+ * Knowledge Graph Workspace — the graph as the primary interface.
+ *
+ * Layout is deterministic (lib/graph/layout), so the same companies always
+ * render identically and users build spatial memory. All traversal,
+ * filtering and analytics happen server-side in the graph API; this
+ * component renders, selects and explains. State lives in the URL, so any
+ * workspace is a shareable address.
+ */
+export default function GraphWorkspace() {
+  const router = useRouter()
+  const params = useSearchParams()
+
+  // Without an explicit symbol, open on the company the reader last researched.
+  const recent = useSyncExternalStore(subscribeSymbols, recentSnapshot, emptySnapshot)
+  const symbols = (params.get('symbols') || recent[0] || 'AAPL').toUpperCase()
+  const hops = Number(params.get('hops') || '2')
+  const typeFilter = params.get('types') || ''
+  const minConfidence = params.get('minconf') || ''
+  const before = params.get('before') || ''
+
+  const sessionId = params.get('session') || ''
+  const [data, setData] = useState<Workspace | null>(null)
+  const [loading, setLoading] = useState(true)
+  // The request itself failed (distinct from a graph that is genuinely empty).
+  const [failed, setFailed] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [pinned, setPinned] = useState<string[]>([])
+  const [session, setSession] = useState<ResearchSession | null>(null)
+  const [state, setState] = useState<WorkspaceState>(emptyWorkspaceState())
+  const [saving, setSaving] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  /* Right-click target. The inspector already carries these actions, but it
+     lives in a side panel — on a dense graph that is a round trip across the
+     screen for every node you want to try. The menu puts the same actions
+     (no new ones, no fabricated relationships) at the cursor. */
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+
+  useEffect(() => onSaveStateChange(setSaving), [])
+
+  useEffect(() => {
+    if (!menu) return undefined
+    const close = () => setMenu(null)
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(null) }
+    // `click` rather than `mousedown` so the menu's own buttons fire first.
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
+  /* Restore: opening a session rebuilds the exact workspace it was left in. */
+  useEffect(() => {
+    if (!sessionId) return
+    let alive = true
+    openSession(sessionId).then((loaded) => {
+      if (!alive || !loaded) return
+      setSession(loaded)
+      setState(loaded.workspace_state)
+      setPinned(loaded.workspace_state.pinned)
+      setSelected(loaded.workspace_state.selected)
+      // Restore the graph the session was viewing.
+      const stored = loaded.workspace_state.symbols.join(',')
+      if (stored && stored !== symbols) {
+        const next = new URLSearchParams(params.toString())
+        next.set('symbols', stored)
+        next.set('hops', String(loaded.workspace_state.filters.hops))
+        router.replace(`/terminal/graph?${next}`)
+      }
+    })
+    return () => { alive = false }
+    // Restore runs once per session id — later state changes are saves, not loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  /* Autosave: every workspace mutation persists, debounced. Users never save. */
+  const persist = useCallback((mutate: (current: WorkspaceState) => WorkspaceState) => {
+    setState((current) => {
+      const next = mutate(current)
+      if (sessionId) updateWorkspace(sessionId, next)
+      return next
+    })
+  }, [sessionId])
+
+  /* Keep the graph view in the session state as the user navigates. */
+  useEffect(() => {
+    if (!sessionId) return
+    persist((current) => ({
+      ...current,
+      symbols: symbols.split(',').filter(Boolean),
+      selected,
+      pinned,
+      filters: { ...current.filters, hops, node_types: typeFilter },
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, symbols, hops, typeFilter, selected, pinned])
+
+  /* A pending save must not be lost when the tab closes. */
+  useEffect(() => {
+    const onLeave = () => { void flushWorkspace() }
+    window.addEventListener('pagehide', onLeave)
+    return () => {
+      window.removeEventListener('pagehide', onLeave)
+      void flushWorkspace()
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    const query = new URLSearchParams({ symbols, hops: String(hops) })
+    if (typeFilter) query.set('node_types', typeFilter)
+    if (minConfidence) query.set('min_confidence', minConfidence)
+    if (before) query.set('before', before)
+    fetch(`/api/graph/workspace?${query}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`the graph request returned ${res.status}`)
+        return res.json()
+      })
+      .then((json: Workspace) => {
+        if (!alive) return
+        setFailed(false)
+        setData(json)
+        setSelected(json?.roots[0] ?? null)
+        setLoading(false)
+      })
+      .catch(() => { if (alive) { setFailed(true); setData(null); setLoading(false) } })
+    return () => { alive = false }
+  }, [symbols, hops, typeFilter, minConfidence, before])
+
+  const setParam = useCallback((key: string, value: string) => {
+    const next = new URLSearchParams(params.toString())
+    if (value) next.set(key, value)
+    else next.delete(key)
+    router.push(`/terminal/graph?${next}`)
+  }, [params, router])
+
+  const layout = useMemo(
+    () => data ? computeLayout({ nodes: data.nodes, edges: data.edges, roots: data.roots }) : null,
+    [data],
+  )
+
+  /* Everything the selection actually touches. Used to dim the rest — the
+     graph answers "what does this connect to?" by removing the noise rather
+     than by making one node bigger. Derived from real edges only, so a node
+     with no recorded relationships correctly leaves everything dimmed. */
+  const related = useMemo(() => {
+    if (!selected || !data) return null
+    const ids = new Set<string>([selected])
+    for (const edge of data.edges) {
+      if (edge.source_id === selected) ids.add(edge.target_id)
+      else if (edge.target_id === selected) ids.add(edge.source_id)
+    }
+    return ids
+  }, [selected, data])
+
+  const selectedNode = data?.nodes.find((n) => n.id === selected) ?? null
+  const selectedEdges = (data?.edges ?? []).filter(
+    (e) => e.source_id === selected || e.target_id === selected,
+  )
+  const nodeById = new Map((data?.nodes ?? []).map((n) => [n.id, n]))
+
+  const togglePin = (id: string) => {
+    setPinned((current) => current.includes(id) ? current.filter((p) => p !== id) : [...current, id])
+    persist((current) => recordActivity(current, 'pin', id))
+  }
+
+  const startSession = async () => {
+    const created = await createSession(
+      `${symbols} investigation`, undefined, [],
+      { ...emptyWorkspaceState(), symbols: symbols.split(',').filter(Boolean) },
+    )
+    if (created) {
+      const next = new URLSearchParams(params.toString())
+      next.set('session', created.id)
+      router.push(`/terminal/graph?${next}`)
+    }
+  }
+
+  const saveNote = async () => {
+    if (!sessionId || !noteDraft.trim()) return
+    const refs = selected ? [{ type: 'entity', id: selected }] : []
+    const note = await addNote(sessionId, noteDraft.trim(), refs)
+    if (note) {
+      setSession((current) => current ? { ...current, notes: [note, ...current.notes] } : current)
+      setNoteDraft('')
+      persist((current) => recordActivity(current, 'note', note.body.slice(0, 60)))
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div>
+        <PageHeader
+          nested
+          eyebrow="Workspace"
+          title="Knowledge graph"
+          lede="Every entity and relationship FinSignal knows, from SEC filings and Wikidata. Compare companies to see what they share, or trace how any two entities connect. Nothing here is inferred — every edge names the provider that asserted it and the confidence it carries."
+        />
+      </div>
+
+      {/* Session bar: the investigation this workspace belongs to */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        {session ? (
+          <>
+            <Badge tone="info">{session.title}</Badge>
+            <span className="u-meta">
+              {saving ? 'Saving…' : 'All changes saved'}
+            </span>
+            <button type="button" className="sys-btn sys-btn--ghost sys-btn--xs"
+                    style={{ border: '1px solid var(--rule)' }}
+                    onClick={() => persist((current) => captureSnapshot(current, `${symbols} view`))}>
+              Snapshot ({state.snapshots.length})
+            </button>
+            <Link href="/terminal/sessions" className="sys-btn sys-btn--ghost sys-btn--xs"
+                  style={{ border: '1px solid var(--rule)' }}>
+              All investigations
+            </Link>
+          </>
+        ) : (
+          <>
+            <span className="u-note">
+              Not in a session — pins and notes won&apos;t be saved.
+            </span>
+            <button type="button" className="sys-btn sys-btn--xs" onClick={startSession}>
+              Start investigation
+            </button>
+            <Link href="/terminal/sessions" className="sys-btn sys-btn--ghost sys-btn--xs"
+                  style={{ border: '1px solid var(--rule)' }}>
+              Open existing
+            </Link>
+          </>
+        )}
+      </div>
+
+      {/* Controls: symbols, depth, filters, time machine */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <label htmlFor="ws-symbols" className="visually-hidden">Tickers to compare</label>
+        <input
+          id="ws-symbols"
+          className="sys-input sys-input--block mono"
+          defaultValue={symbols}
+          placeholder="NVDA,MSFT"
+          style={{ maxWidth: 190, letterSpacing: 'var(--tracking-label)' }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setParam('symbols', (e.target as HTMLInputElement).value.toUpperCase())
+          }}
+        />
+        {/* Depth and entity type are both one-of-N over equal-width options,
+            so the indicator slides — see ui/Controls `Segmented`. Traversal
+            depth in particular reads as a scale, and a marker moving along
+            it says "further out" in a way three independent pressed states
+            never did. */}
+        <Segmented
+          label="Graph depth"
+          value={String(hops)}
+          onChange={(next) => setParam('hops', next)}
+          options={[
+            { value: '1', label: '1 hop' },
+            { value: '2', label: '2 hops' },
+            { value: '3', label: '3 hops' },
+          ]}
+        />
+        <Segmented
+          label="Filter by entity type"
+          value={typeFilter}
+          onChange={(next) => setParam('types', next)}
+          options={[
+            { value: '', label: 'All' },
+            { value: 'company', label: 'Companies' },
+            { value: 'person', label: 'People' },
+            { value: 'product', label: 'Products' },
+          ]}
+        />
+        {/* Filters by when FinSignal OBSERVED a relationship, not when the
+            relationship began — Wikidata edges carry no start date, so this
+            cannot reconstruct history. Labelled for what it actually does. */}
+        <label htmlFor="ws-before" className="sys-label">Observed before</label>
+        <input
+          id="ws-before" type="date" className="sys-input sys-input--block num" defaultValue={before}
+          title="Shows only relationships FinSignal recorded before this date. Not a historical reconstruction — providers do not supply relationship start dates."
+          style={{ maxWidth: 150 }}
+          onChange={(e) => setParam('before', e.target.value)}
+        />
+      </div>
+
+      <div className="terminal-grid-main">
+        {/* Graph */}
+        <section aria-label="Graph" className="panel panel--compact">
+          {data?.status === 'partial' && (
+            <p className="sys-state__detail" role="status" style={{ padding: '8px 12px 0' }}>
+              {data.unavailable_symbols?.length
+                ? `${data.unavailable_symbols.join(', ')} could not be looked up, so the graph below leaves ${data.unavailable_symbols.length === 1 ? 'it' : 'them'} out.`
+                : 'Some sources did not answer, so this graph may be missing relationships.'}
+            </p>
+          )}
+          {loading ? (
+            <WorkBoot
+              compact
+              label="Building the graph"
+              hint="entities and relationships from SEC filings and Wikidata"
+            />
+          ) : failed || data?.status === 'unavailable' ? (
+            <EmptyState
+              title="The graph could not be built"
+              description={`The relationship sources did not answer for ${symbols}, so this is not a finding that it has none. Change the selection or try again in a moment.`}
+            />
+          ) : !layout || layout.nodes.length === 0 ? (
+            <EmptyState
+              title={`No relationships recorded for ${symbols}`}
+              description="The graph is assembled from SEC filings and Wikidata, which cover large US issuers best. Nothing is inferred, so a company with no filed or cataloged relationships shows an empty graph rather than a guessed one."
+              action={
+                symbols !== 'AAPL' ? (
+                  <button
+                    type="button"
+                    className="sys-btn"
+                    onClick={() => {
+                      const next = new URLSearchParams(params.toString())
+                      next.set('symbols', 'AAPL')
+                      router.replace(`/terminal/graph?${next}`)
+                    }}
+                  >
+                    Try AAPL
+                  </button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <svg
+              viewBox={viewBoxFor(layout)}
+              role="application"
+              className={`gfocus${related ? ' is-focusing' : ''}`}
+              aria-label={`Knowledge graph for ${symbols}`}
+              style={{ width: '100%', height: 'auto', maxHeight: 520 }}
+            >
+              {layout.edges.map((edge, i) => {
+                const active = edge.source === selected || edge.target === selected
+                return (
+                  <g key={`${edge.source}-${edge.target}-${i}`}>
+                  <line
+                    className={`gfocus__edge${active ? ' is-related' : ''}`}
+                    x1={edge.x1} y1={edge.y1} x2={edge.x2} y2={edge.y2}
+                    // `--line` is the hairline token for dividers sitting
+                    // against an adjacent surface; at 8% white, times a 0.55
+                    // opacity, an edge crossing open canvas came out around
+                    // 4% and was invisible. It only ever looked drawn because
+                    // the old layout packed every neighbour into a tight
+                    // starburst where the lines overlapped. Matches
+                    // GraphExplorer, which already used the stronger token.
+                    stroke={active ? 'var(--accent)' : 'var(--rule-strong)'}
+                    strokeWidth={active ? 1.8 : 1}
+                    opacity={active ? 1 : 0.75}
+                  />
+                  {/* The relationship is named on the selected node's edges
+                      only; naming every edge at once is unreadable. */}
+                  {active && EDGE_LABELS[edge.type] ? (
+                    <text
+                      className="gfocus__edge-label"
+                      x={(edge.x1 + edge.x2) / 2}
+                      y={(edge.y1 + edge.y2) / 2 - 3}
+                      textAnchor="middle"
+                    >
+                      {EDGE_LABELS[edge.type]}
+                    </text>
+                  ) : null}
+                  </g>
+                )
+              })}
+              {layout.nodes.map((node: LayoutNode) => {
+                const isSelected = node.id === selected
+                const isPinned = pinned.includes(node.id)
+                const isRoot = data?.roots.includes(node.id)
+                const radius = isRoot ? 9 : Math.min(7, 3 + node.degree * 0.35)
+                return (
+                  <g key={node.id} transform={`translate(${node.x},${node.y})`}
+                     className={`gfocus__node${!related || related.has(node.id) ? ' is-related' : ''}`}
+                     tabIndex={0}
+                     role="button"
+                     aria-pressed={isSelected}
+                     aria-label={`${node.label} — ${node.type}`}
+                     onKeyDown={(e) => {
+                       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(node.id) }
+                       if (e.key === 'Escape') setSelected(null)
+                     }}
+                     onClick={() => setSelected(node.id)}
+                     onContextMenu={(event) => {
+                       event.preventDefault()
+                       setSelected(node.id)
+                       setMenu({ id: node.id, x: event.clientX, y: event.clientY })
+                     }}
+                     style={{ cursor: 'pointer' }}>
+                    {isPinned && <circle r={radius + 4} fill="none" stroke="var(--e-warn)" strokeWidth={1.2} />}
+                    <NodeShape type={node.type} r={radius} fill={color(node.type)} selected={isSelected} />
+                    {/* Company nodes carry their real logo, clipped to the
+                        node circle. Deliberately restricted to the nodes big
+                        enough to resolve one — roots, the selection, and the
+                        well-connected — because a logo at r=3 is a smudge,
+                        and painting every node would be exactly the noise
+                        the graph cannot afford. The coloured circle stays
+                        beneath: an <image> whose href 404s simply does not
+                        paint, so a missing logo leaves the node it already
+                        had rather than a hole. */}
+                    {logoHref(node) && radius >= 6 && (isRoot || isSelected || node.degree > 3) && (
+                      <>
+                        <clipPath id={`clip-${slug(node.id)}`}>
+                          <circle r={radius - 0.5} />
+                        </clipPath>
+                        {/* A light disc under the mark. Provider logos are
+                            transparent PNGs in the brand's own colour, and
+                            NVIDIA's green over the accent-green node circle
+                            was literally invisible — the logo was painting
+                            onto its own colour. */}
+                        <circle r={radius - 0.5} fill="#f7f7f8" />
+                        <image
+                          href={logoHref(node)}
+                          x={-(radius - 0.5)} y={-(radius - 0.5)}
+                          width={(radius - 0.5) * 2} height={(radius - 0.5) * 2}
+                          clipPath={`url(#clip-${slug(node.id)})`}
+                          preserveAspectRatio="xMidYMid meet"
+                        />
+                      </>
+                    )}
+                    {(isRoot || isSelected || node.degree > 3 || node.depth <= 1) && (
+                      <text y={-radius - 5} textAnchor="middle"
+                            style={{ fontSize: isRoot ? 11 : 10, fontWeight: isRoot || isSelected ? 600 : 400,
+                                     fill: isSelected ? 'var(--ink)' : 'var(--ink-muted)' }}>
+                        {node.label.length > 20 ? `${node.label.slice(0, 19)}…` : node.label}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
+            </svg>
+                )}
+          {menu && (() => {
+            const node = nodeById.get(menu.id)
+            if (!node) return null
+            const isPinned = pinned.includes(menu.id)
+            return (
+              <div
+                className="ctxmenu"
+                role="menu"
+                aria-label={`Actions for ${node.label}`}
+                style={{ left: menu.x, top: menu.y }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <p className="ctxmenu__head">{node.label}</p>
+                <button type="button" role="menuitem" className="ctxmenu__item"
+                        onClick={() => { togglePin(menu.id); setMenu(null) }}>
+                  {isPinned ? 'Unpin' : 'Pin to workspace'}
+                </button>
+                {node.route && (
+                  <Link role="menuitem" className="ctxmenu__item" href={node.route}
+                        onClick={() => setMenu(null)}>
+                    Open research
+                  </Link>
+                )}
+                <button type="button" role="menuitem" className="ctxmenu__item"
+                        onClick={() => { setParam('symbols', menu.id.split(':')[1] ?? ''); setMenu(null) }}
+                        disabled={node.type !== 'company'}>
+                  Center the graph here
+                </button>
+              </div>
+            )
+          })()}
+          {data && Object.keys(data.analytics.node_types ?? {}).length ? (
+            <ul className="glegend" aria-label="Entity types in this graph">
+              {Object.entries(data.analytics.node_types).sort((x, y) => y[1] - x[1]).map(([type, n]) => (
+                <li key={type}>
+                  <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden>
+                    <NodeShape type={type} r={5} fill={color(type)} selected={false} />
+                  </svg>
+                  {TYPE_NAME[type] ?? type}
+                  <b className="num">{n}</b>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {data && (
+            <p className="u-note kbd-hint" style={{ marginTop: 8 }}>
+              Click a node to focus its relationships · <kbd>right-click</kbd> for actions ·
+              <kbd>↵</kbd> and <kbd>esc</kbd> work from the keyboard
+            </p>
+          )}
+          {data && (
+            <p className="num" style={{ fontSize: 'var(--t-meta)', color: 'var(--ink-faint)', marginTop: 8 }}>
+              {data.analytics.nodes} entities · {data.analytics.edges} relationships ·
+              density {data.analytics.density} · avg confidence {data.analytics.avg_confidence}
+            </p>
+          )}
+        </section>
+
+        {/* Inspector */}
+        <section aria-label="Inspector" className="panel panel--pad">
+          {selectedNode ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <p className="sys-label" style={{ marginBottom: 4 }}>{selectedNode.type}</p>
+                {/* The inspector is where an entity gets read rather than
+                    scanned, and it is the one place in this view with room
+                    for a mark at a size that resolves — a node circle is
+                    four screen pixels across. */}
+                <p style={{ fontSize: 'var(--t-base)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {selectedNode.type === 'company' && selectedNode.id.split(':')[1] && (
+                    <CompanyMark
+                      ticker={selectedNode.id.split(':')[1]}
+                      name={selectedNode.label}
+                      size={26}
+                    />
+                  )}
+                  {selectedNode.label}
+                </p>
+                {selectedNode.description && (
+                  <p style={{ fontSize: 'var(--t-small)', color: 'var(--ink-muted)', marginTop: 4 }}>{selectedNode.description}</p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="sys-btn sys-btn--ghost sys-btn--xs"
+                        style={{ border: '1px solid var(--rule)' }}
+                        onClick={() => togglePin(selectedNode.id)}>
+                  {pinned.includes(selectedNode.id) ? 'Unpin' : 'Pin'}
+                </button>
+                {selectedNode.route?.startsWith('/company/') && (
+                  <Link href={selectedNode.route} className="sys-btn sys-btn--ghost sys-btn--xs"
+                        style={{ border: '1px solid var(--rule)' }}>
+                    Open company research
+                  </Link>
+                )}
+              </div>
+
+              <div>
+                <p className="sys-label" style={{ marginBottom: 6 }}>
+                  Relationships ({selectedEdges.length})
+                </p>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                  {selectedEdges.slice(0, 24).map((edge, i) => {
+                    const otherId = edge.source_id === selected ? edge.target_id : edge.source_id
+                    const other = nodeById.get(otherId)
+                    if (!other) return null
+                    return (
+                      <li key={`${otherId}-${i}`} style={{ fontSize: 'var(--t-small)' }}>
+                        <button type="button" onClick={() => setSelected(otherId)}
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: 'var(--ink)', fontWeight: 600 }}>
+                          {other.label}
+                        </button>
+                        <span style={{ color: 'var(--ink-faint)' }}>
+                          {' · '}{EDGE_LABELS[edge.type] ?? edge.type}
+                          {' · '}{edge.provider}
+                          {' · '}{edge.confidence.toFixed(2)}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 'var(--t-body)', color: 'var(--ink-faint)' }}>Select a node to inspect it.</p>
+          )}
+
+          {/* Multi-select: what the compared companies share */}
+          {data && data.shared.length > 0 && (
+            <div className="hairline-top" style={{ marginTop: 14, paddingTop: 12 }}>
+              <p className="sys-label" style={{ marginBottom: 8 }}>
+                Shared by all selected companies
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {data.shared.slice(0, 12).map((row) => (
+                  <button key={row.node.id} type="button" className="sys-btn sys-btn--ghost sys-btn--xs"
+                          style={{ border: '1px solid var(--rule)' }}
+                          onClick={() => setSelected(row.node.id)}>
+                    {row.node.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Analytics */}
+          {data && data.analytics.most_connected.length > 0 && (
+            <details className="disclosure" style={{ marginTop: 14 }}>
+              <summary style={{ fontSize: 'var(--t-small)', fontWeight: 600, color: 'var(--ink-muted)' }}>
+                Graph analytics
+              </summary>
+              <div style={{ marginTop: 10 }}>
+                <p className="sys-label" style={{ marginBottom: 6 }}>Most connected</p>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {data.analytics.most_connected.slice(0, 6).map((row) => (
+                    <li key={row.id} className="u-note">
+                      <button type="button" onClick={() => setSelected(row.id)}
+                              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--ink)' }}>
+                        {row.label}
+                      </button>
+                      <span className="num" style={{ color: 'var(--ink-faint)' }}> · {row.degree} links</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="num" style={{ fontSize: 'var(--t-meta)', color: 'var(--ink-faint)', marginTop: 8 }}>
+                  Providers: {Object.entries(data.analytics.provider_coverage).map(([p, n]) => `${p} ${n}`).join(' · ')}
+                </p>
+              </div>
+            </details>
+          )}
+        </section>
+      </div>
+
+      {/* Notebook — belongs to the session, references what is selected */}
+      {session && (
+        <section aria-label="Research notebook" className="panel panel--pad">
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+            <h3 className="h-panel h-panel--sub">Notebook</h3>
+            <span className="u-meta">
+              {session.notes.length} note{session.notes.length === 1 ? '' : 's'}
+              {selected ? ` · will reference ${selected.split(':')[1] ?? selected}` : ''}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <label htmlFor="note-draft" className="visually-hidden">New note</label>
+            <input id="note-draft" className="sys-input sys-input--block" value={noteDraft}
+                   placeholder="Record a finding…"
+                   onChange={(e) => setNoteDraft(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === 'Enter') void saveNote() }} />
+            <button type="button" className="sys-btn"
+                    disabled={!noteDraft.trim()} onClick={() => void saveNote()}>
+              Add
+            </button>
+          </div>
+          {session.notes.length > 0 && (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {session.notes.slice(0, 8).map((note) => (
+                <li key={note.id} style={{ fontSize: 'var(--t-body)', lineHeight: 1.5 }}>
+                  <span style={{ color: 'var(--ink)' }}>{note.body}</span>
+                  {note.refs.length > 0 && (
+ <span className="num u-meta">
+                      {' · '}{note.refs.map((r) => r.id.split(':')[1] ?? r.id).join(', ')}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {pinned.length > 0 && (
+        <p className="u-meta">
+          Pinned: {pinned.map((id) => nodeById.get(id)?.label ?? id).join(' · ')}
+        </p>
+      )}
+    </div>
+  )
+}

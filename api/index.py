@@ -1,0 +1,4061 @@
+"""
+FinSignal API — FastAPI Backend
+Multi-factor risk intelligence: FRED macro + yfinance technicals + Alpha Vantage
+fundamentals + NewsAPI sentiment, with an optional LLM explanation layer.
+
+Handlers are deliberately *synchronous* (`def`, not `async def`): every data
+source here is blocking (fredapi / yfinance / requests), and FastAPI runs sync
+handlers in its threadpool — so one slow upstream can no longer stall the
+event loop for every concurrent request (see docs/AUDIT.md H3).
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+import os
+import re
+import sys
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any, Literal, Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
+from fastapi import Path as FastPath
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.decision import (
+    compute_decision,
+    confidence_breakdown,
+    derive_risk_level,
+    verdict_to_recommendation,
+)
+from src.services import llm_service, macro_freshness
+from src.services import availability, clerk_auth, conviction, deployment, explore_service
+from src.services.authz import Permission, require_permission
+from src.services.paper_access import paper_access_state, require_paper_trader
+from src.models import (
+    AggregateSentiment,
+    MacroStatus,
+    RiskAssessment,
+    SignalVerdict,
+    TechnicalAnalysis,
+)
+from src.risk_analysis import FinSignalRiskEngine
+from src.prediction_agent import RiskAwarePredictionAgent
+from src.sentiment_edge import SentimentAnalyzer
+from src.alpha_vantage import AlphaVantageClient
+from src.news_api import NewsAPIClient
+from src.models import MacroIndicators
+from src import observability, providers
+from src.providers import capabilities, fabric
+from src.providers.schemas import PriceSeries
+from src.providers.vendors.market_vendors import PERIOD_DAYS
+from src.scoring import score_ticker
+from src.scoring import technical_intelligence
+from src.services import (
+    analyst_store, database, factor_lab_service, fundamentals_data,
+    news_scoring, research_prefetch, street_intelligence,
+)
+from src.services import ml_service
+from src.services.backtest_service import peek_cached as peek_backtest
+from src.services.clerk_auth import optional_clerk_user, require_clerk_user
+from src.services.database.repositories import AnalysisRepository
+from src.services.provenance import Ledger
+from src.services import visual_intelligence
+from src.services import memory_diagnostics
+from src.services import log_sanitizer
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Railway captures stdout; structured single-line records with timestamps.
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
+log_sanitizer.install()
+logger = logging.getLogger("finsignal.api")
+
+DISCLAIMER = "Research and education only — not investment advice."
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Startup and shutdown, as one handler.
+
+    A lifespan rather than `@app.on_event("startup")`, which FastAPI has
+    deprecated; the inference service uses the same form.
+    `report_startup_memory` is defined further down and is only called once
+    the module has finished loading.
+    """
+    report_startup_memory()
+    yield
+
+
+app = FastAPI(
+    title="FinSignal API",
+    description="Multi-Factor Risk & Prediction Engine",
+    version="5.0.0",
+    lifespan=_lifespan,
+)
+
+# Explicit origin allowlist (comma-separated env var). Wildcard + credentials
+# is invalid per the CORS spec; nothing cookie-based crosses this boundary,
+# so credentials stay off.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://finsignalterminal.vercel.app,https://mini-aladding.vercel.app,http://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["*"],
+)
+
+# Persistence REST API (watchlists, portfolio, history, saved reports,
+# preferences) — Clerk-authenticated, Supabase-backed, optional at runtime.
+from api.persistence import router as persistence_router  # noqa: E402
+
+app.include_router(persistence_router)
+
+
+_REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+
+@app.middleware("http")
+async def request_logging(request, call_next):
+    """One structured line per request: id, method, path, user, status, duration.
+
+    The request id is generated here and echoed as X-Request-Id so a client
+    error report can be matched to its server log line. The Clerk user id is
+    attached by the auth dependency (request.state.clerk_user) when a valid
+    token was presented — never any token contents.
+    """
+    # The Vercel proxy mints one id per request and keeps it across its own
+    # retries; adopting it lets a proxy-side failure be matched to this line.
+    # Anything that is not a short token is ignored, so a caller cannot write
+    # into the log through the header.
+    headers = getattr(request, "headers", None)
+    inbound = (headers.get("x-request-id") if headers is not None else None) or ""
+    request_id = inbound if _REQUEST_ID.fullmatch(inbound) else uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+    # Profile every request. Attribution is per-label and lock-guarded, and
+    # measured at 0.19 µs per record (benchmarks/observability.py), so this
+    # stays on in production rather than behind a flag nobody enables before
+    # the incident they needed it for.
+    profile = observability.begin(f"{request.method} {request.url.path}", request_id=request_id)
+    memory_before = memory_diagnostics.snapshot()
+    started = time.perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "rid=%s unhandled error %s %s", request_id, request.method, request.url.path
+        )
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - started) * 1000
+        user = getattr(request.state, "clerk_user", None)
+        report = profile.report()
+        memory_after = memory_diagnostics.snapshot()
+        observability.registry.observe(
+            "http.request", duration_ms,
+            method=request.method, path=_metrics_path(request.url.path),
+        )
+        logger.info(
+            "rid=%s %s %s%s -> %s in %.0fms (work %.0fms, %.1fx parallel, "
+            "%.0fms unattributed, rss_mb=%s, rss_delta_mb=%s)",
+            request_id, request.method, request.url.path,
+            f" user={user}" if user else "",
+            response.status_code if response is not None else "exception", duration_ms,
+            report["work_ms"], report["parallelism"], report["unattributed_ms"],
+            memory_after.rss_mb,
+            (round(memory_after.rss_mb - memory_before.rss_mb, 2)
+             if memory_after.rss_mb is not None and memory_before.rss_mb is not None else None),
+        )
+        pressure = memory_diagnostics.pressure_level(memory_after.memory_utilization_percent)
+        if pressure:
+            logger.warning(
+                "event=memory_pressure level=%s rid=%s path=%s rss_mb=%s "
+                "memory_limit_mb=%s utilization_percent=%s",
+                pressure, request_id, _metrics_path(request.url.path), memory_after.rss_mb,
+                memory_after.memory_limit_mb, memory_after.memory_utilization_percent,
+            )
+        # Context-local profiles must never survive either a successful or an
+        # exceptional request.
+        observability.clear()
+    assert response is not None
+    response.headers["X-Request-Id"] = request_id
+    # Which build answered. The frontend proxy forwards response headers, so a public route read
+    # through the website (`GET /api/macro`) names the backend revision the website is really
+    # calling. That is not the service's traffic split: the proxy once called a pinned candidate
+    # tag for weeks while every release moved traffic to a different revision, and nothing on the
+    # website could show it. Both values are already public on /api/health.
+    response.headers["X-Backend-Commit"] = _build_commit()
+    revision = os.getenv("K_REVISION")
+    if revision:
+        response.headers["X-Backend-Revision"] = revision
+    return response
+
+
+def report_startup_memory() -> None:
+    memory = memory_diagnostics.snapshot()
+    logger.info(
+        "event=startup build_sha=%s python=%s pid=%d worker_count=%s rss_mb=%s "
+        "peak_rss_mb=%s memory_limit_mb=%s environment=%s",
+        _build_commit(), sys.version.split()[0], os.getpid(),
+        memory_diagnostics.configured_worker_count(), memory.rss_mb,
+        memory.peak_rss_mb, memory.memory_limit_mb, deployment.environment_name(),
+    )
+
+
+def _metrics_path(path: str) -> str:
+    """Collapse path parameters so metric labels stay bounded.
+
+    `/api/research/AAPL` and `/api/research/MSFT` are the same endpoint. Left
+    raw, a ticker in the label is unbounded cardinality — the exact leak the
+    registry's series cap exists to catch.
+    """
+    parts = path.strip("/").split("/")
+    collapsed = [
+        part if index < 2 or not part or part.islower() else ":param"
+        for index, part in enumerate(parts)
+    ]
+    return "/" + "/".join(collapsed)
+
+# ── Shared instances ──────────────────────────────────────────────────────────
+
+risk_engine        = FinSignalRiskEngine()
+sentiment_analyzer = SentimentAnalyzer(max_headlines=12)
+av_client          = AlphaVantageClient()
+
+#: Status reported when the macro regime could not be measured at all.
+#: Deliberately not one of `MacroStatus`'s analytical values — an outage is
+#: not a regime, and `_macro_assessment` maps it to DATA_ERROR rather than
+#: letting it read as a reading.
+MACRO_UNAVAILABLE = "UNAVAILABLE"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _fmt_market_cap(v: Optional[float]) -> Optional[str]:
+    """Format raw market cap to readable string e.g. '$2.34T'."""
+    if v is None:
+        return None
+    if v >= 1e12:
+        return f"${v/1e12:.2f}T"
+    if v >= 1e9:
+        return f"${v/1e9:.2f}B"
+    if v >= 1e6:
+        return f"${v/1e6:.2f}M"
+    return f"${v:,.0f}"
+
+
+def _macro_unavailable(reason: str) -> dict[str, Any]:
+    """The macro block when FRED cannot be read.
+
+    This replaced a payload that returned inflation 3.2%, a Fed funds rate of
+    5.25% and a risk multiplier of 1.15 whenever the provider failed. Those
+    numbers were plausible, fixed, and had nothing to do with the economy.
+    A reader could not tell them from measurements, and the scoring engine
+    could not either: it gated a verdict on a multiplier derived from an
+    outage.
+
+    An unreachable FRED service does not mean inflation is 3.2%, and it does
+    not mean inflation is 0% either — which is what the missing-observation
+    path substituted before feeding the risk engine. Every unmeasured field is
+    null, the status says why, and no multiplier is invented.
+    """
+    return {
+        "status":               MACRO_UNAVAILABLE,
+        "error":                reason,
+        "yield_spread":         None,
+        "inflation_rate":       None,
+        "fed_funds_rate":       None,
+        "yield_curve_inverted": None,
+        "recession_warning":    None,
+        # Only a missing credential is the reader's to fix. This note was
+        # attached to every unavailable block, so a deployment whose key was
+        # set - and whose provider was merely down, or stale - told its reader
+        # to configure something already configured.
+        "note": (
+            "Set FRED_API_KEY to enable the macro regime gate."
+            if not providers.macro.fred.available
+            else "FRED is configured but returned no usable current reading."
+        ),
+    }
+
+
+
+
+# FRED series update at most daily; a short TTL cache removes 1-2s of latency
+# from every research call and keeps free-tier quota usage flat.
+MACRO_CACHE_TTL_SECONDS = float(os.getenv("MACRO_CACHE_TTL", "300"))
+_macro_cache: dict[str, tuple[float, tuple[float, dict[str, Any]]]] = {}
+_macro_lock = threading.Lock()
+
+
+def _fetch_macro_safe() -> tuple[Optional[float], dict[str, Any]]:
+    """SRM + stats from FRED, or an explicit absence. Never raises.
+
+    Returns `None` for the multiplier when the regime could not be measured.
+    That is a contract change and it is the point: the previous version could
+    not express "unknown", so it expressed "1.15" instead.
+
+    Two substitutions were removed here.
+
+    A missing FRED observation was replaced with `0.0` before the multiplier
+    was computed — so an unreturned term spread became "the curve spread is
+    exactly zero" and an unreturned CPI print became "inflation is exactly
+    zero", both of which the risk engine then scored as real readings. The
+    term spread in particular is sign-sensitive: zero sits precisely on the
+    inversion boundary this gate exists to detect.
+
+    Total provider failure returned fixed demo values and a multiplier of
+    1.15. Nothing downstream could distinguish that from a measurement.
+
+    Both indicators are now required. Partial data stays partial: the fields
+    that arrived are reported, the ones that did not are null, and no
+    multiplier is produced from an incomplete set.
+    """
+    now = time.time()
+    with _macro_lock:
+        entry = _macro_cache.get("srm")
+        if entry and entry[0] > now:
+            return entry[1]
+    try:
+        snapshot_result = providers.macro.get_macro()
+        if not snapshot_result.ok:
+            raise RuntimeError(snapshot_result.error or "macro provider returned no data")
+        snap = snapshot_result.data
+        provenance = {
+            "source": getattr(snapshot_result, "source", None),
+            "cached": getattr(snapshot_result, "cached", False),
+            "stale": getattr(snapshot_result, "stale", False),
+            "fetched_at": (snapshot_result.fetched_at.isoformat()
+                           if getattr(snapshot_result, "fetched_at", None) else None),
+            "observation_dates": getattr(snap, "observation_dates", {}),
+        }
+        if provenance["stale"]:
+            return None, {**_macro_unavailable("FRED is unavailable; the cached observation is stale."),
+                          **provenance}
+
+        # A fresh fetch of an old observation. FRED answered, but its latest
+        # point for a series is months behind (a feed that stopped updating);
+        # presenting that as today's curve would be a stale response dressed as
+        # a live one. The optional policy rate is dropped on its own; the two
+        # that gate the multiplier take the regime with them.
+        old_fields = macro_freshness.stale_fields(provenance["observation_dates"])
+        if "fed_funds_rate" in old_fields and snap.fed_funds_rate is not None:
+            snap = snap.model_copy(update={"fed_funds_rate": None})
+        gating_stale = [f for f in old_fields if f in macro_freshness.GATING_FIELDS]
+        if gating_stale:
+            return None, {
+                **_macro_unavailable(
+                    f"FRED's latest {macro_freshness.describe(gating_stale)} observation is too "
+                    "old to describe the present, so the regime gate could not be computed."
+                ),
+                **provenance,
+                "stale_fields": old_fields,
+            }
+
+        # The two the multiplier is computed from. Either one missing means
+        # there is no multiplier to compute — not a multiplier computed from
+        # a zero standing in for it.
+        if snap.yield_spread is None or snap.inflation_rate is None:
+            missing = [
+                name for name, value in
+                (("10Y-2Y term spread", snap.yield_spread),
+                 ("CPI inflation", snap.inflation_rate))
+                if value is None
+            ]
+            partial = _macro_unavailable(
+                f"FRED returned no {' and no '.join(missing)}, so the regime "
+                "gate could not be computed."
+            )
+            # Whatever did arrive is still reported, as itself.
+            if snap.yield_spread is not None:
+                partial["yield_spread"] = snap.yield_spread
+            if snap.inflation_rate is not None:
+                partial["inflation_rate"] = f"{snap.inflation_rate:.2f}%"
+            if snap.fed_funds_rate is not None:
+                partial["fed_funds_rate"] = f"{snap.fed_funds_rate:.2f}%"
+            partial.update(provenance)
+            return None, partial
+
+        indicators = MacroIndicators(
+            yield_spread=snap.yield_spread,
+            inflation_rate=snap.inflation_rate,
+            fed_funds_rate=snap.fed_funds_rate,
+        )
+        assessment = risk_engine.calculate_multiplier(indicators)
+        stats: dict[str, Any] = {
+            **provenance,
+            "yield_spread": indicators.yield_spread,
+            "inflation_rate": f"{indicators.inflation_rate:.2f}%",
+            "fed_funds_rate": (
+                f"{indicators.fed_funds_rate:.2f}%"
+                if indicators.fed_funds_rate is not None else None
+            ),
+            "yield_curve_inverted": assessment.yield_curve_inverted,
+            "status": assessment.status.value,
+            "recession_warning": assessment.recession_warning,
+        }
+        result: tuple[Optional[float], dict[str, Any]] = (assessment.risk_multiplier, stats)
+        with _macro_lock:
+            _macro_cache["srm"] = (now + MACRO_CACHE_TTL_SECONDS, result)
+        return result
+    except Exception:  # noqa: BLE001 — macro must never break research
+        # The detail goes to the log, not to the browser. `str(exc)` here put
+        # whatever the failing layer happened to raise into a public response
+        # — vendor error text, internal class names, library internals. None
+        # of that is the caller's to read, and none of it helps them: the
+        # actionable fact is that the regime could not be measured, which is
+        # exactly what the status already says.
+        logger.exception("Macro fetch failed — reporting the regime as unavailable")
+        return None, _macro_unavailable(
+            "The macro provider could not be read, so the regime gate was not applied."
+        )
+
+
+# ── Fast macro stress inputs (engine v2.1 probabilistic gate) ────────────────
+# NFCI (weekly), Moody's BAA−10Y credit spread z, T10Y2Y term spread, VIX
+# percentile. Cached 15 min; every input optional — the gate degrades to the
+# term-only Estrella–Mishkin reduced model, then to the legacy SRM curve.
+STRESS_CACHE_TTL = 900.0
+#: A snapshot with an input missing is kept briefly, not for the full TTL, so one
+#: failed fetch does not hold the verdict's macro gate open for a quarter hour.
+STRESS_DEGRADED_TTL = 60.0
+_stress_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+#: Series that describe the *environment a company is being valued in*, as
+#: opposed to the company. Deliberately a short list: a company page is not a
+#: macro dashboard, and the full 14-indicator board already exists on Market.
+#: Each entry is (series id, label, unit, what it changes about a valuation).
+MACRO_CONTEXT_SERIES: list[tuple[str, str, str, str]] = [
+    ("FEDFUNDS", "Policy rate", "%",
+     "The anchor for every discount rate applied to these cash flows."),
+    ("DGS10", "10-year Treasury", "%",
+     "The long-end yield a terminal value is discounted against."),
+    ("T10Y2Y", "Curve slope (10y−2y)", "%",
+     "Negative has preceded recessions; a compressing curve tightens credit."),
+    ("DFII10", "10-year real yield", "%",
+     "Inflation-adjusted cost of capital — the one that moves multiples."),
+]
+
+
+def _plural(count: int, noun: str, plural: Optional[str] = None) -> str:
+    """`3 vendors`, but also `1 vendor`.
+
+    These strings are read directly by users in the provenance ledger, where
+    "1 line items from 1 vendors" was appearing verbatim in production. A
+    ledger whose whole purpose is to look carefully assembled should not be
+    the place a reader finds sloppy grammar.
+    """
+    word = noun if count == 1 else (plural or f"{noun}s")
+    return f"{count} {word}"
+
+
+def _macro_context(stress: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The rate and stress environment this company is being valued in.
+
+    Two things are joined here, both already paid for:
+
+    * The **stress inputs** the scoring engine consumes — NFCI, the credit
+      spread z-score, the VIX percentile and the term spread. These gate the
+      verdict, and a reader who cannot see them is told a verdict was gated
+      without being told by what.
+    * A short list of **rate series** that bear directly on a valuation.
+      Fetched through `get_series_snapshot`, which is cached and already warm
+      from the Market dashboard's own board, so this costs no vendor call in
+      the common case.
+
+    Deliberately not the full fourteen-indicator board. A company page is not
+    a macro dashboard; these four are the ones that change what a multiple
+    should be, and the rest already have a home on Market.
+
+    Every observation carries its own date. Macro series publish on different
+    cadences — the policy rate monthly, Treasury yields daily — so a single
+    "as of" for the block would be wrong for most of it.
+    """
+    rows: list[dict[str, Any]] = []
+    unavailable: list[str] = []
+    for series_id, label, unit, why in MACRO_CONTEXT_SERIES:
+        try:
+            result = providers.macro.get_series_snapshot(series_id, count=8)
+            if not result.ok or result.stale or not result.data:
+                unavailable.append(label)
+                continue
+            observations = result.data
+            date, value = observations[-1]
+            prior = observations[-2][1] if len(observations) >= 2 else None
+            rows.append({
+                "series_id": series_id,
+                "label": label,
+                "unit": unit,
+                "why": why,
+                "value": round(float(value), 4),
+                # The observation's own date, not the fetch time. A monthly
+                # series read today is still last month's number.
+                "as_of": str(date),
+                "prior": round(float(prior), 4) if prior is not None else None,
+                "change": round(float(value) - float(prior), 4) if prior is not None else None,
+                "source": "FRED",
+            })
+        except Exception:  # noqa: BLE001 — context is never fatal
+            logger.exception("macro context fetch failed for %s", series_id)
+            unavailable.append(label)
+
+    stress_rows = [
+        {
+            "key": key, "label": label, "value": stress.get(key), "note": note,
+            "source": source,
+        }
+        for key, label, note, source in (
+            ("nfci", "Financial conditions (NFCI)",
+             "Standardised at source: zero is average, positive is tighter than average.",
+             "FRED"),
+            ("credit_spread_z", "Credit spread (BAA−10y), z",
+             "Robust z-score over one year, computed here from the FRED series.",
+             "FRED, computed locally"),
+            ("vix_percentile", "VIX percentile (1y)",
+             "Share of the last year's closes at or below today's. Computed here.",
+             "market data, computed locally"),
+            ("term_spread", "Term spread (10y−2y)",
+             "The same series as the curve slope above, as the engine consumes it.",
+             "FRED"),
+        )
+        if stress.get(key) is not None
+    ]
+
+    if not rows and not stress_rows:
+        return None
+    # A reading that could not be taken is named, not left out: four rows
+    # that read as the whole picture are a claim the block cannot back when
+    # one of them failed to load.
+    unavailable += [
+        label for key, label in (
+            ("nfci", "Financial conditions (NFCI)"),
+            ("credit_spread_z", "Credit spread (BAA−10y)"),
+            ("vix_percentile", "VIX percentile"),
+            ("term_spread", "Term spread (10y−2y)"),
+        )
+        if stress.get(key) is None
+    ]
+    note = ("The environment this valuation sits in. The stress figures below "
+            "gate the engine's verdict; the rates above set the discount rate "
+            "every multiple on this page implies.")
+    if unavailable:
+        note += f" Not available for this run: {', '.join(unavailable)}."
+    return {
+        "rates": rows,
+        "stress": stress_rows,
+        "unavailable": unavailable,
+        "note": note,
+    }
+
+
+def _stress_inputs() -> dict[str, Any]:
+    now = time.time()
+    with _macro_lock:
+        entry = _stress_cache.get("v1")
+        if entry and entry[0] > now:
+            return entry[1]
+
+    out: dict[str, Any] = {"term_spread": None, "nfci": None,
+                           "credit_spread_z": None, "vix_percentile": None}
+    try:
+        term = providers.macro.get_series_snapshot("T10Y2Y", count=5)
+        if term.ok and not term.stale and term.data and math.isfinite(float(term.data[-1][1])):
+            out["term_spread"] = float(term.data[-1][1])
+    except Exception:  # noqa: BLE001
+        logger.exception("term spread fetch failed")
+    try:
+        nfci = providers.macro.get_series_snapshot("NFCI", count=5)
+        if nfci.ok and not nfci.stale and nfci.data and math.isfinite(float(nfci.data[-1][1])):
+            out["nfci"] = float(nfci.data[-1][1])  # NFCI is standardized at source
+    except Exception:  # noqa: BLE001
+        logger.exception("NFCI fetch failed")
+    try:
+        credit = providers.macro.get_series_snapshot("BAA10Y", count=260)
+        if credit.ok and not credit.stale and credit.data and len(credit.data) >= 60 and all(math.isfinite(v) for _, v in credit.data):
+            values = [v for _, v in credit.data]
+            median = sorted(values)[len(values) // 2]
+            mad = sorted(abs(v - median) for v in values)[len(values) // 2]
+            if mad > 1e-9:
+                out["credit_spread_z"] = round((values[-1] - median) / (1.4826 * mad), 3)
+    except Exception:  # noqa: BLE001
+        logger.exception("credit spread fetch failed")
+    try:
+        vix = providers.market_data.get_series("^VIX", "1y")
+        if vix.ok and not vix.stale and len(vix.data.bars) >= 60:
+            closes = [bar.close for bar in vix.data.bars]
+            latest = closes[-1]
+            out["vix_percentile"] = round(sum(1 for c in closes if c <= latest) / len(closes), 3)
+    except Exception:  # noqa: BLE001
+        logger.exception("VIX percentile fetch failed")
+
+    complete = all(value is not None for value in out.values())
+    with _macro_lock:
+        _stress_cache["v1"] = (now + (STRESS_CACHE_TTL if complete else STRESS_DEGRADED_TTL), out)
+    return out
+
+
+def _series_to_dataframe(series: PriceSeries):
+    """Convert normalized OHLCV bars to the DataFrame shape the agent expects."""
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "Open": [bar.open for bar in series.bars],
+            "High": [bar.high for bar in series.bars],
+            "Low": [bar.low for bar in series.bars],
+            "Close": [bar.close for bar in series.bars],
+            "Volume": [bar.volume if bar.volume is not None else 0 for bar in series.bars],
+        },
+        index=pd.to_datetime([bar.date for bar in series.bars]),
+    )
+    return frame
+
+
+def _macro_assessment(multiplier: float, stats: dict[str, Any]) -> RiskAssessment:
+    """Rebuild a RiskAssessment object from the stats dict for decision logic."""
+    # No default of STABLE. A stats dict with no status is one that never got
+    # a reading, and "absent" must not resolve to the most reassuring value in
+    # the enum.
+    status_raw = str(stats.get("status") or MACRO_UNAVAILABLE)
+    try:
+        status = MacroStatus(status_raw)
+    except ValueError:  # UNAVAILABLE, or anything else unrecognised
+        status = MacroStatus.DATA_ERROR
+    # An unmeasured regime applies no dampening — the identity, not a guess at
+    # one. The caller records that the gate was not applied; this only keeps
+    # the arithmetic well formed.
+    gate = 1.0 if multiplier is None else max(0.5, min(1.6, multiplier))
+    return RiskAssessment(
+        risk_multiplier=gate,
+        yield_curve_inverted=bool(stats.get("yield_curve_inverted", False)),
+        status=status,
+        recession_warning=bool(stats.get("recession_warning", False)),
+    )
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+def _resolve_build_commit() -> str:
+    """The revision this process loaded, or "unknown".
+
+    Hosts inject their own name for this; Render uses RENDER_GIT_COMMIT.
+    Falls back to asking git, which only works in a checkout — deliberately
+    returning "unknown" rather than raising, because a health endpoint that
+    can fail is worse than one that admits ignorance.
+
+    Resolved once, at import, and never again. Asking git per request reads
+    the *working tree's* HEAD rather than the code this process is running,
+    so a server started before a commit reported the commit anyway. That is
+    the most misleading answer a health endpoint can give: it is precisely
+    what someone checks to find out whether a deployment picked up a change,
+    and a long-lived server on old code answered yes. Verified against a
+    process started before three commits, which reported the newest one.
+    """
+    for name in ("RENDER_GIT_COMMIT", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT", "SOURCE_VERSION"):
+        value = os.getenv(name)
+        if value:
+            return value[:12]
+    try:
+        import subprocess
+
+        return subprocess.run(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            capture_output=True, text=True, timeout=2, check=True,
+        ).stdout.strip() or "unknown"
+    except Exception:  # noqa: BLE001 — health must never fail
+        return "unknown"
+
+
+#: Frozen at import: the revision of the code in memory, not of the checkout.
+_BUILD_COMMIT = _resolve_build_commit()
+
+
+def _build_commit() -> str:
+    return _BUILD_COMMIT
+
+
+@app.get("/api/health")
+def health():
+    """Fast process liveness. Research readiness lives at /api/system/health."""
+    environment = deployment.environment_name()
+    missing_persistence = [
+        name
+        for name in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "CLERK_JWKS_URL", "CLERK_ISSUER")
+        if not os.getenv(name)
+    ]
+    return {
+        "status":  "ok",
+        "service": "FinSignal API",
+        "version": "5.0.0",
+        # ── Deploy identity ──────────────────────────────────────────────
+        # `version` is hand-maintained and was identical on a local tree and
+        # a production service running six-day-old code, which is exactly how
+        # a stale backend went unnoticed until the browser 404'd on
+        # /api/factors. These two fields make "is production running my
+        # code?" a single curl:
+        #
+        #   commit       the deployed revision. Render injects
+        #                RENDER_GIT_COMMIT; other hosts set their own, and
+        #                locally we fall back to reading git directly.
+        #   capabilities the route families this build actually serves, so a
+        #                client can ask what exists instead of discovering
+        #                absence through a 404.
+        "commit": _build_commit(),
+        #   revision     Cloud Run's own name for the running revision
+        #                (K_REVISION, injected by the platform — not
+        #                configuration). It identifies the deployment even
+        #                when no commit was supplied, which is how a revision
+        #                that was deployed without GIT_COMMIT can still be
+        #                matched to the platform's record. Null off Cloud Run.
+        "revision": os.getenv("K_REVISION") or None,
+        "capabilities": sorted(
+            {
+                route.path.split("/")[2]
+                for route in app.routes
+                if getattr(route, "path", "").startswith("/api/")
+                and len(route.path.split("/")) > 2
+            }
+        ),
+        "data_sources": {
+            "fred":          bool(os.getenv("FRED_API_KEY")),
+            "alpha_vantage": av_client.available,
+            # Configured *and* not known to be rejected. This reported only
+            # that a key string existed, so a key NewsAPI answered with
+            # `apiKeyInvalid` was advertised as a working news source.
+            "news_api":      NewsAPIClient().available and providers.news.newsapi.operational,
+            "llm":           llm_service.narrative_configured(),
+            "llm_providers": llm_service.configured_providers(),
+            "yfinance":      True,
+            "yahoo_scraper": True,
+        },
+        # Presence booleans only — names, never values. Lets a release engineer
+        # confirm from outside that the deployed build reads its env correctly.
+        "persistence": {
+            "database_configured": database.is_configured(),
+            "auth_configured": bool(os.getenv("CLERK_JWKS_URL")),
+            "missing_env": missing_persistence,
+        },
+        "environment": environment,
+    }
+
+
+@app.get("/api/system/health", tags=["ops"])
+def system_health():
+    """Canonical component health; blocked research never appears healthy."""
+    from src.services import system_health as health_service
+
+    return health_service.snapshot(build_commit=_build_commit()).model_dump()
+
+
+@app.get("/api/macro")
+def get_macro():
+    """Systemic Risk Multiplier + FRED macro indicators."""
+    start = time.time()
+    multiplier, stats = _fetch_macro_safe()
+    return JSONResponse(
+        status_code=200,
+        content={
+            "risk_multiplier": multiplier,
+            "stats":           stats,
+            "elapsed_seconds": round(time.time() - start, 2),
+        },
+    )
+
+
+# Deterministic event taxonomy. Keyword matching over the headline and its
+# summary — not a second model. The existing LLM layer already receives the
+# headlines and narrates them; classifying them here gives it structure to
+# reason over and gives the UI counts that do not depend on a model being up.
+NEWS_CATEGORIES: dict[str, tuple[str, ...]] = {
+    "Earnings": ("earnings", "eps", "quarterly result", "q1 ", "q2 ", "q3 ", "q4 ",
+                 "beats estimate", "misses estimate", "guidance", "revenue"),
+    "M&A": ("acquisition", "acquires", "merger", "takeover", "buyout", "stake in",
+            "divest", "spin-off", "spinoff"),
+    "Product": ("launch", "unveil", "announce", "release", "new model", "rollout",
+                "next-generation", "update"),
+    "Regulatory": ("regulator", "antitrust", "sec ", "ftc", "doj", "probe",
+                   "investigation", "compliance", "fine", "sanction"),
+    "Management": ("ceo", "cfo", "chief executive", "resign", "appoint", "steps down",
+                   "board of directors", "succession"),
+    "Analyst": ("upgrade", "downgrade", "price target", "initiates coverage",
+                "outperform", "underperform", "reiterates", "rating"),
+    "Legal": ("lawsuit", "sues", "settlement", "court", "litigation", "patent"),
+    "Supply chain": ("supply chain", "shortage", "factory", "production", "supplier",
+                     "capacity", "fab "),
+    "Macro": ("fed ", "inflation", "rate cut", "rate hike", "tariff", "recession",
+              "jobs report", "gdp"),
+}
+
+
+
+def _restatements(timeline: list[dict[str, Any]], *, min_pct: float = 0.5) -> list[dict[str, Any]]:
+    """Figures a company later reported differently for the same period.
+
+    A restatement is the single most under-surfaced fact in company research.
+    Every ratio panel in this product shows the *current* record; none of them
+    can say that the current record is not what was originally filed. This
+    reads the point-in-time timeline and reports where a later filing gave a
+    different value for the same concept and the same period end.
+
+    Guards, because the raw XBRL timeline is noisy:
+
+    * Grouped by the **full period** — concept, start *and* end — never by end
+      alone. A 10-K carries both the fiscal-year figure and the fourth quarter
+      that shares its end date, and grouping on the end date alone compares
+      annual revenue against quarterly revenue. Measured on Apple, that single
+      omission produced 106 "restatements", the largest a fictitious -77%,
+      with both values filed on the same day. Instant concepts (balance-sheet
+      lines) carry no start, which is exactly what separates them from flow
+      concepts and keeps the two from being compared.
+    * Units must match. A concept reported in USD and later in USD/share is a
+      different measurement, not a correction.
+    * Same form family. A 10-Q figure superseded by a 10-K is ordinary
+      year-end adjustment rather than a restatement of the same disclosure.
+    * A floor of `min_pct`, because XBRL carries rounding-level differences
+      that are noise rather than news.
+    * Both filing dates are kept, so a reader can open the original and the
+      revision and check the claim.
+    """
+    grouped: dict[tuple, list[dict[str, Any]]] = {}
+    for row in timeline:
+        end = row.get("period_end")
+        concept = row.get("concept")
+        if not end or not concept or row.get("value") is None:
+            continue
+        grouped.setdefault(
+            (concept, row.get("period_start"), end, row.get("unit"), row.get("form")),
+            [],
+        ).append(row)
+
+    out: list[dict[str, Any]] = []
+    for (concept, start, end, unit, form), rows in grouped.items():
+        rows.sort(key=lambda r: str(r.get("filed") or ""))
+        # Distinct values only: the same figure repeated across filings is a
+        # confirmation, not a change.
+        distinct: list[dict[str, Any]] = []
+        for row in rows:
+            if not distinct or row["value"] != distinct[-1]["value"]:
+                distinct.append(row)
+        if len(distinct) < 2:
+            continue
+        first, last = distinct[0], distinct[-1]
+        if not first["value"]:
+            continue
+        change = (last["value"] - first["value"]) / abs(first["value"]) * 100
+        if abs(change) < min_pct:
+            continue
+        out.append({
+            "label": last.get("label") or concept,
+            "concept": concept,
+            "period_start": start,
+            "period_end": end,
+            "unit": unit,
+            "form": form,
+            "original_value": first["value"],
+            "original_filed": first.get("filed"),
+            "revised_value": last["value"],
+            "revised_filed": last.get("filed"),
+            "change_pct": round(change, 2),
+            "revisions": len(distinct),
+        })
+    # Largest revisions first — the ones worth a reader's attention.
+    out.sort(key=lambda r: abs(r["change_pct"]), reverse=True)
+    return out
+
+
+def _xbrl_trends(facts: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Year-over-year change per concept, from the company's own tagged figures.
+
+    Only consecutive fiscal years of the *same* concept are compared, so no
+    two periods are ever crossed between different line items. A concept with
+    one year of data yields no trend rather than a zero — a single
+    observation is not a direction.
+
+    The prior year's value travels with the percentage so the arithmetic is
+    checkable against the rows rendered beside it.
+    """
+    out: list[dict[str, Any]] = []
+    for concept, series in facts.items():
+        usable = [row for row in series if isinstance(row.get("value"), (int, float))]
+        if len(usable) < 2:
+            continue
+        latest, prior = usable[0], usable[1]
+
+        # ── comparability guards ─────────────────────────────────────────
+        # The SEC adapter currently filters to annual 10-K/FY rows, so these
+        # should never fire today. They exist because the alternative is a
+        # silent wrong answer: if that filter is ever relaxed, an unguarded
+        # trend would happily compare a quarter against a full year and
+        # report a ~75% "decline" that is purely a period mismatch.
+        if latest.get("form") != prior.get("form"):
+            continue
+        if latest.get("unit") != prior.get("unit"):
+            continue
+
+        # Fiscal years must be distinct and ordered. A restatement republishes
+        # the same year under a later filing date; comparing a year against
+        # itself would report a restatement as growth.
+        latest_fy, prior_fy = latest.get("fiscal_year"), prior.get("fiscal_year")
+        if not isinstance(latest_fy, int) or not isinstance(prior_fy, int):
+            continue
+        if latest_fy <= prior_fy:
+            continue
+        # A gap wider than one year is a reporting hole, not a year-over-year
+        # change, and labelling it "YoY" would be wrong.
+        if latest_fy - prior_fy != 1:
+            continue
+
+        # Guard the ratio: a prior year of zero has no defined growth rate,
+        # and a sign flip makes the percentage meaningless rather than large.
+        if not prior["value"] or (latest["value"] < 0) != (prior["value"] < 0):
+            continue
+        change = (latest["value"] / prior["value"] - 1) * 100
+        out.append({
+            "concept": concept,
+            "latest_year": latest.get("fiscal_year"),
+            "latest_value": latest["value"],
+            "prior_year": prior.get("fiscal_year"),
+            "prior_value": prior["value"],
+            "change_pct": round(change, 2),
+            "unit": latest.get("unit"),
+            "form": latest.get("form"),
+            "filed": latest.get("filed"),
+        })
+    out.sort(key=lambda r: abs(r["change_pct"]), reverse=True)
+    return out
+
+
+def _categorise_news(headlines: list) -> dict[str, int]:
+    """Counts per event type, deterministically.
+
+    A headline can hit several categories — an earnings beat that triggers an
+    upgrade is genuinely both — so counts sum to more than the article total.
+    That is reported as counts per category rather than as a partition, since
+    forcing a single label would discard the second fact.
+    """
+    counts: dict[str, int] = {}
+    for item in headlines:
+        text = f"{getattr(item, 'title', '')} {getattr(item, 'summary', '')}".lower()
+        matched = False
+        for label, keywords in NEWS_CATEGORIES.items():
+            if any(k in text for k in keywords):
+                counts[label] = counts.get(label, 0) + 1
+                matched = True
+        if not matched:
+            counts["Other"] = counts.get("Other", 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+
+
+#: What the fabric records for a vendor that answered and had nothing.
+_NO_DATA_ANSWER = "no data for symbol"
+
+
+def _news_state(evidence: list) -> str:
+    """Why no headline was read: `no_headlines` or `unavailable`.
+
+    A vendor that answered "nothing on this symbol" is a statement about the
+    symbol; one that raised, timed out or was refused is a statement about us.
+    If any source answered, "no headlines" is true. If none could, it is not
+    ours to say that there is no news.
+    """
+    answered = any(
+        (e.ok and not e.data) or (not e.ok and e.error == _NO_DATA_ANSWER) for e in evidence
+    )
+    return "no_headlines" if answered else "unavailable"
+
+
+def _as_result(headlines: list, providers_used: list[str]):
+    """Wrap merged headlines in the envelope the rest of the handler expects.
+
+    The sentiment path downstream consumes a `ProviderResult`; the fabric
+    returns a plain merge. Adapting here keeps that path untouched rather
+    than rewriting a working scorer around a new shape.
+    """
+    from src.providers.schemas import ProviderResult
+    return ProviderResult(
+        data=headlines or None,
+        source=", ".join(providers_used),
+        sources_consulted=list(providers_used),
+        confidence=0.85 if headlines else 0.0,
+        error=None if headlines else "no vendor returned headlines",
+    )
+
+
+@app.get("/api/research/{ticker}")
+def research_ticker(
+    ticker: str,
+    fast: bool = Query(False, description="Skip sentiment and LLM analysis for speed"),
+    depth: str = Query(
+        "intermediate",
+        description="Explanation depth of the narrative: beginner, intermediate or advanced. "
+                    "Changes how much is explained, never the evidence or the decision.",
+    ),
+    clerk_user: Optional[str] = Depends(optional_clerk_user),
+):
+    """
+    Full FinSignal research pipeline:
+      1. FRED macro risk (SRM)          ┐ fetched concurrently —
+      2. yfinance + Alpha Vantage       ┘ independent upstreams
+      3. NewsAPI / Yahoo sentiment       (unless fast=true; needs company name)
+      4. Deterministic decision synthesis (verdict / confidence / risk level)
+      5. LLM explanation layer           (unless fast=true; optional, never fatal)
+    """
+    start  = time.time()
+    ticker = ticker.upper().strip()
+
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+
+    # Chain of custody for this run. Every provider call below already returns
+    # which vendor answered, which were tried, and how degraded the answer
+    # was; until this ledger existed all of it went to a log line and the
+    # response carried the conclusion without the evidence behind it.
+    ledger = Ledger(ticker)
+
+    news_stream: Optional[dict[str, Any]] = None
+    news_categories: dict[str, int] = {}
+    # Company identity & narrative, from whichever vendor answered. Fetched
+    # for the news query anyway; previously six of its fields were used and
+    # the description, domain, headcount and IPO date were thrown away.
+    profile_block: Optional[dict[str, Any]] = None
+    # Valuation, margin, return, growth and leverage ratios. 133 figures come
+    # back from one vendor request; seven were being kept.
+    ratios_block: Optional[dict[str, Any]] = None
+    #: Rate and stress environment. Populated only on the scoring path, since
+    #: that is where the stress inputs are already in hand.
+    macro_context: Optional[dict[str, Any]] = None
+
+    # ── Step 0: warm the seven independent upstreams concurrently. ──────────
+    # Purely a latency measure. Every fetch below is cache-first and
+    # single-flight wrapped, so a warmed key returns instantly and a call
+    # that races the warm joins it instead of duplicating it. Nothing here
+    # changes what the handler computes — if the warm fails entirely, each
+    # call below simply fetches as it always did.
+    research_prefetch.warm(ticker)
+
+    # ── Steps 1+2 concurrently: macro and technicals are independent. ────────
+    # predict() is run with a neutral multiplier, then the real dampening is
+    # applied once the SRM is known — apply_dampening is stateless, so the
+    # arithmetic is identical to the sequential version.
+    prediction = None
+    technicals: dict[str, Any] = {}
+    tech_error: Optional[str] = None
+
+    def _days_to_earnings() -> Optional[int]:
+        """Best-effort business days to the next confirmed earnings date.
+
+        Routed through the yfinance vendor's `timed_call` rather than calling
+        `yf.Ticker(...).calendar` here. The direct call sat inside the
+        research request path and had none of the reliability the rest of the
+        stack has: no rate limiting, no failure statistics, no cooldown after
+        repeated failures, and — the reason it mattered — no timeout. yfinance
+        does its own networking, so a hung calendar lookup held a worker
+        thread for as long as it liked while every other provider in this
+        request had already answered.
+
+        Still best-effort: the calendar is a nice-to-have and a failure here
+        returns None rather than costing the research run.
+        """
+        vendor = providers.market_data.yfinance
+
+        def _fetch():
+            import yfinance as yf
+            return yf.Ticker(ticker).calendar
+
+        try:
+            import pandas as pd
+
+            calendar = vendor.timed_call(_fetch, operation="earnings_calendar")
+            dates = calendar.get("Earnings Date") if isinstance(calendar, dict) else None
+            if not dates:
+                return None
+            next_date = min(d for d in dates if d is not None)
+            days = len(pd.bdate_range(start=pd.Timestamp.utcnow().date(), end=next_date)) - 1
+            return max(0, days)
+        except Exception:  # noqa: BLE001 — calendar is a nice-to-have
+            return None
+
+    def _run_technicals():
+        # One year of history through the MarketDataProvider fallback chain
+        # (Polygon → TwelveData → FMP → MarketStack → yfinance → stale cache).
+        # The scoring engine consumes the full year (rolling distributions);
+        # the legacy agent gets the trailing quarter so its reported metrics
+        # (volatility, Sharpe, drawdown windows) stay unchanged.
+        series_result = providers.market_data.get_series(ticker, "1y")
+        full_frame = (
+            _series_to_dataframe(series_result.data)
+            if series_result.ok and series_result.data.bars
+            else None
+        )
+        if full_frame is not None:
+            logger.info(
+                "technicals %s: %d bars via %s (confidence %.2f%s)",
+                ticker, len(full_frame), series_result.source, series_result.confidence,
+                ", stale" if series_result.stale else "",
+            )
+        quarter = full_frame.iloc[-63:] if full_frame is not None and len(full_frame) > 63 else full_frame
+        agent = RiskAwarePredictionAgent(
+            ticker, period="3mo", av_client=av_client, price_data=quarter
+        )
+        prediction_result = agent.predict(risk_multiplier=1.0)
+        # Slow inputs for the v2.1 quality/PEAD sleeves (6h-cached, optional)
+        quality_inputs = fundamentals_data.get_quality_inputs(ticker)
+        pead_inputs = fundamentals_data.get_pead_inputs(ticker)
+        return (prediction_result, full_frame, series_result,
+                _days_to_earnings(), quality_inputs, pead_inputs)
+
+    scoring_frame = None
+    series_result = None
+    series_confidence = 1.0
+    days_to_earnings: Optional[int] = None
+    quality_inputs: dict[str, Any] = {}
+    pead_inputs: dict[str, Any] = {}
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="research") as pool:
+        macro_future = pool.submit(_fetch_macro_safe)
+        tech_future = pool.submit(_run_technicals)
+        multiplier, macro_stats = macro_future.result()
+        # Two different facts, and the reader is owed the difference. The
+        # second branch used to say "applied" as well, which was false: with
+        # no SRM there is nothing to apply, and the verdict a reader was
+        # looking at had never passed through the macro gate at all.
+        ledger.note(
+            f"Macro regime gate applied at SRM {multiplier:.2f}"
+            if isinstance(multiplier, (int, float))
+            else "Macro regime gate NOT applied — the regime could not be measured"
+        )
+        try:
+            (prediction, scoring_frame, series_result,
+             days_to_earnings, quality_inputs, pead_inputs) = tech_future.result()
+            series_confidence = series_result.confidence
+            bars = len(scoring_frame) if scoring_frame is not None else 0
+            ledger.record(
+                label="Daily price history",
+                kind="market",
+                result=series_result,
+                detail=f"{bars} daily bars, 1y window",
+                used_for=["momentum factors", "volatility", "technical intelligence",
+                          "risk score"],
+            )
+        except Exception:
+            logger.exception("Technical analysis failed for %s", ticker)
+            tech_error = "Technical analysis failed — check that the ticker symbol is valid"
+            ledger.record(
+                label="Daily price history", kind="market",
+                missing_reason="every price vendor failed for this symbol",
+                used_for=["momentum factors", "volatility", "risk score"],
+            )
+
+    if prediction is None:
+        # Nothing to score. Continuing used to hand an empty technical record
+        # to the legacy synthesis, which answered "Hold" at 90% confidence for
+        # a symbol no provider knew ("NVIDIA" from the palette). The research
+        # page already has an honest state for this answer; send it.
+        if series_result is not None and getattr(series_result, "outage", False):
+            # Every price vendor failed - none said "I do not have this". That
+            # is the providers being down, and 404 would tell the reader the
+            # symbol does not exist.
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Price providers did not answer, so {ticker} could not be scored. "
+                    "This is an outage, not a missing symbol; try again shortly."
+                ),
+            )
+        raise HTTPException(
+            status_code=404,
+            detail=f"No provider returned price history for {ticker}. Nothing was scored.",
+        )
+
+    if prediction is not None:
+        risk_adjusted = RiskAwarePredictionAgent.apply_dampening(
+            prediction.raw_signal, multiplier
+        ) if prediction.raw_signal else None
+        prediction.risk_adjusted_signal = risk_adjusted or prediction.risk_adjusted_signal
+
+        technicals = {
+            "ticker":        prediction.ticker,
+            "current_price": prediction.current_price,
+            # `is not None`, for the reason spelled out on macd_histogram
+            # below. A five-session return of exactly 0.0 is a measurement —
+            # the price did not move — and truthiness reported it as null,
+            # which the interface renders as "unavailable". Zero volatility
+            # over a flat window is the same claim.
+            "return_5d":     round(prediction.return_5d, 4)  if prediction.return_5d  is not None else None,
+            "return_21d":    round(prediction.return_21d, 4) if prediction.return_21d is not None else None,
+            "volatility":    round(prediction.volatility, 4) if prediction.volatility is not None else None,
+            "sharpe_ratio":  prediction.sharpe_ratio,
+            "sortino_ratio": prediction.sortino_ratio,
+            "rsi_14":        prediction.rsi_14,
+            "max_drawdown":  prediction.max_drawdown,
+            "momentum":      prediction.momentum,
+            "raw_signal":    prediction.raw_signal.value             if prediction.raw_signal             else None,
+            "risk_adjusted_signal": prediction.risk_adjusted_signal.value if prediction.risk_adjusted_signal else None,
+
+            # Alpha Vantage MACD
+            "macd_crossover": prediction.macd_crossover,
+            # `is not None`, not truthiness. A MACD histogram of exactly 0.0
+            # is the crossover itself — the moment the two averages meet —
+            # and truthiness reported the single most informative value this
+            # field can take as "not computed".
+            "macd_histogram": (
+                round(prediction.macd_histogram, 4)
+                if prediction.macd_histogram is not None else None
+            ),
+
+            # Alpha Vantage fundamentals
+            "pe_ratio":       prediction.pe_ratio,
+            "forward_pe":     prediction.forward_pe,
+            "eps":            prediction.eps,
+            "analyst_target": prediction.analyst_target,
+            "week_52_high":   prediction.week_52_high,
+            "week_52_low":    prediction.week_52_low,
+            "beta":           prediction.beta,
+            "market_cap":     _fmt_market_cap(prediction.market_cap),
+            "sector":         prediction.sector,
+            "company_name":   prediction.company_name,
+        }
+    else:
+        technicals = {"error": tech_error, "note": "Technical analysis failed — check ticker"}
+
+    # ── Step 2b: fill fundamentals gaps through the FundamentalsProvider chain
+    # (Alpha Vantage → Finnhub → FMP). Only missing fields are filled; the
+    # agent's own enrichment always wins when present.
+    # Unconditional now. It was gated on a missing company name, so a ticker
+    # whose name arrived from the price vendor never fetched a profile — and
+    # therefore never got a sector, a domain, or a description, all of which
+    # ride in the same response.
+    if prediction is not None:
+        try:
+            # Every profile-capable vendor, in parallel. No single vendor
+            # carries a complete profile — Finnhub has the domain and IPO
+            # date, Polygon the headcount and SIC description, yfinance the
+            # GICS sector and business summary — so this is a union, and the
+            # per-field provenance records which vendor each value came from.
+            profile_ev = providers.fundamentals.profile_evidence(ticker)
+            merged_profile = fabric.merge_profile(profile_ev)
+            if merged_profile:
+                profile_block = {
+                    **merged_profile["resolved"],
+                    "symbol": ticker,
+                    "providers": merged_profile["providers"],
+                    "conflicts": merged_profile["conflicts"],
+                    "field_sources": {
+                        name: entry.get("providers", [])
+                        for name, entry in merged_profile["fields"].items()
+                    },
+                }
+            ledger.record_fabric(
+                label="Company profile",
+                kind="fundamental",
+                evidence=profile_ev,
+                detail=(f"{_plural(len(merged_profile['fields']), 'field')} from "
+                        f"{_plural(len(merged_profile['providers']), 'vendor')}"
+                        + (f" · {len(merged_profile['conflicts'])} disputed"
+                           if merged_profile["conflicts"] else "")
+                        if merged_profile else "no vendor answered"),
+                used_for=["sector identity", "news query", "logo domain"],
+            )
+            # The chain result still feeds the legacy enrichment below, which
+            # expects a single profile object rather than a union.
+            company_result = providers.fundamentals.get_company(ticker)
+            if company_result.ok:
+                profile = company_result.data
+                technicals["company_name"] = technicals.get("company_name") or profile.name or None
+                technicals["sector"] = technicals.get("sector") or (profile.sector or None)
+                if technicals.get("market_cap") is None and profile.market_cap:
+                    technicals["market_cap"] = _fmt_market_cap(profile.market_cap)
+        except Exception:  # noqa: BLE001 — enrichment is never fatal
+            logger.exception("Fundamentals enrichment failed for %s", ticker)
+            ledger.record_gap(label="Company profile", kind="fundamental")
+    if prediction is not None and technicals.get("pe_ratio") is None:
+        try:
+            fund_result = providers.fundamentals.get_fundamentals(ticker)
+            if fund_result.ok and fund_result.data:
+                # The ratio surface the vendor already returned. Named with
+                # their periods intact so nothing downstream can average a
+                # TTM figure against a 5-year average.
+                ratios_block = {
+                    k: v for k, v in fund_result.data.model_dump().items()
+                    if k not in ("symbol", "profile", "vendor_metrics") and v is not None
+                }
+                ratios_block["source"] = fund_result.source
+            ledger.record(
+                label="Valuation fundamentals",
+                kind="fundamental",
+                result=fund_result,
+                detail="P/E, forward P/E, EPS, beta, 52-week range",
+                used_for=["value factors", "analyst-target upside", "beta risk"],
+            )
+            if fund_result.ok:
+                fund = fund_result.data
+                for field, value in (
+                    ("pe_ratio", fund.pe_ratio), ("forward_pe", fund.forward_pe),
+                    ("eps", fund.eps), ("beta", fund.beta),
+                    ("week_52_high", fund.week_52_high), ("week_52_low", fund.week_52_low),
+                ):
+                    if technicals.get(field) is None and value is not None:
+                        technicals[field] = value
+        except Exception:  # noqa: BLE001
+            logger.exception("Fundamentals metrics enrichment failed for %s", ticker)
+            ledger.record_gap(label="Valuation fundamentals", kind="fundamental")
+
+    # ── Step 2c: multi-source consensus quote and statement union ───────────
+    # Both are parallel fan-outs over every capable vendor, not fallback
+    # chains: the useful output is not the value but the *agreement*, and a
+    # chain that stops at the first answer can never report it. Additive —
+    # neither feeds the scoring engine, so a total failure here costs the
+    # response two presentation blocks and nothing else.
+    consensus = None
+    statements = None
+    series_integrity = None
+    if prediction is not None:
+        try:
+            quote_ev = providers.market_data.quote_evidence(ticker)
+            consensus = fabric.reconcile_price(quote_ev)
+            ledger.record_fabric(
+                label="Consensus quote",
+                kind="market",
+                evidence=quote_ev,
+                detail=(f"{consensus['agreement']} vendors agree · "
+                        f"{consensus['dispersion_pct']:.3f}% spread"
+                        if consensus else "no vendor quoted this symbol"),
+                used_for=["price consensus", "cross-vendor agreement"],
+            )
+        except Exception:  # noqa: BLE001 — additive block, never fatal
+            logger.exception("consensus quote failed for %s", ticker)
+            ledger.record_gap(label="Consensus quote", kind="market")
+
+        try:
+            stmt_ev = providers.fundamentals.statement_evidence(ticker)
+            statements = fabric.merge_fundamentals(stmt_ev)
+            if stmt_ev:
+                ledger.record_fabric(
+                    label="Reported statements",
+                    kind="fundamental",
+                    evidence=stmt_ev,
+                    detail=(f"{_plural(len(statements['fields']), 'line item')} from "
+                            f"{_plural(len(statements['providers']), 'vendor')}"
+                            if statements else "no vendor is entitled for this symbol"),
+                    used_for=["valuation ratios", "fundamental trend"],
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("statement union failed for %s", ticker)
+            ledger.record_gap(label="Reported statements", kind="fundamental")
+
+        try:
+            # Cross-vendor check on the daily closes. The chart itself is
+            # served by the fallback chain — one vendor, fast, which is the
+            # right shape for *drawing a line*. This is the other question:
+            # do the vendors that also have this history agree with the one
+            # we drew? A single series cannot answer it, and the specific
+            # error it catches is a raw close mixed in among adjusted ones,
+            # which is invisible in isolation and silently corrupts every
+            # technical reading taken from it.
+            #
+            # A short window deliberately: the failure is systematic, so a
+            # quarter shows it as clearly as a decade at a fraction of the
+            # payload.
+            series_ev = providers.market_data.series_evidence(ticker, "3mo")
+            series_integrity = fabric.reconcile_series(series_ev)
+            if series_ev:
+                ledger.record_fabric(
+                    label="Series integrity",
+                    kind="market",
+                    evidence=series_ev,
+                    detail=(
+                        f"{series_integrity['agreement_pct']:.1f}% close agreement "
+                        f"over {series_integrity['shared_sessions']} shared sessions"
+                        if series_integrity
+                        else "only one vendor returned history — nothing to check against"
+                    ),
+                    used_for=["cross-vendor history validation"],
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("series reconciliation failed for %s", ticker)
+            ledger.record_gap(label="Series integrity", kind="market")
+
+    # ── Step 2c-bis: ownership and sell-side positioning ────────────────────
+    # Both keyless, both previously unreachable. Ownership answers "who is on
+    # the other side of this" and the analyst block answers "what does the
+    # street expect" — neither is performance data, which is why they are
+    # separate blocks rather than more fields on the fundamentals object.
+    ownership_block = None
+    analyst_block = None
+    targets_block = None
+    if prediction is not None:
+        try:
+            own_ev = providers.fundamentals.ownership_evidence(ticker)
+            row = next((e.data for e in own_ev if e.ok and e.data), None)
+            if row is not None:
+                ownership_block = row.model_dump()
+            if own_ev:
+                ledger.record_fabric(
+                    label="Ownership & short interest",
+                    kind="fundamental",
+                    evidence=own_ev,
+                    detail=(f"short interest as of {ownership_block['short_interest_date']}"
+                            if ownership_block and ownership_block.get("short_interest_date")
+                            else "float, holdings and short interest"),
+                    used_for=["presentation only — never a scoring input"],
+                )
+        except Exception:  # noqa: BLE001 — additive, never fatal
+            logger.exception("ownership lookup failed for %s", ticker)
+            ledger.record_gap(label="Ownership & short interest", kind="fundamental")
+
+        try:
+            # Bare price targets, from vendors that publish a target without
+            # a rating distribution. Kept per-vendor for the same reason as
+            # the consensus block.
+            target_ev = providers.fundamentals.target_evidence(ticker)
+            target_rows = [
+                {**e.data.model_dump(), "source": e.provider}
+                for e in target_ev if e.ok and e.data
+            ]
+            if target_rows:
+                # Normalised onto the same shape as the consensus readings so
+                # the UI renders one row per vendor rather than two competing
+                # panels. Vendors that publish only a target and no rating
+                # distribution simply leave those fields null.
+                targets_block = [
+                    {
+                        "target_mean": row.get("target_mean"),
+                        "target_high": row.get("target_high"),
+                        "target_low": row.get("target_low"),
+                        "analyst_count": row.get("analyst_count"),
+                        "recommendation": None,
+                        "recommendation_mean": None,
+                        "source": row.get("source"),
+                    }
+                    for row in target_rows
+                ]
+            if target_ev:
+                ledger.record_fabric(
+                    label="Price targets",
+                    kind="fundamental",
+                    evidence=target_ev,
+                    detail=f"{len(target_rows)} vendor target"
+                           f"{'' if len(target_rows) == 1 else 's'}",
+                    used_for=["presentation only — not reconciled across vendors"],
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("target lookup failed for %s", ticker)
+            ledger.record_gap(label="Price targets", kind="fundamental")
+
+        try:
+            analyst_ev = providers.fundamentals.analyst_evidence(ticker)
+            readings = [e.data.model_dump() for e in analyst_ev if e.ok and e.data]
+            # Every vendor's reading, side by side — the consensus objects
+            # and the bare-target vendors together. Deliberately not reduced
+            # to one number: each polls a different analyst set, so a median
+            # across vendors is a consensus of no actual group of people.
+            combined = readings + (targets_block or [])
+            # A vendor appearing in both lists would be double-counted.
+            seen_sources: set[str] = set()
+            deduped = []
+            for row in combined:
+                source = str(row.get("source") or "")
+                if source in seen_sources:
+                    continue
+                seen_sources.add(source)
+                deduped.append(row)
+            if deduped:
+                analyst_block = {"readings": deduped, "vendor_count": len(deduped)}
+            if analyst_ev:
+                ledger.record_fabric(
+                    label="Analyst targets",
+                    kind="fundamental",
+                    evidence=analyst_ev,
+                    detail=(f"{len(readings)} vendor consensus reading"
+                            f"{'' if len(readings) == 1 else 's'}"),
+                    used_for=["presentation only — not reconciled across vendors"],
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("analyst lookup failed for %s", ticker)
+            ledger.record_gap(label="Analyst targets", kind="fundamental")
+
+    # ── Step 2d: primary-source regulatory evidence ─────────────────────────
+    # SEC EDGAR is keyless and is not another vendor's reading of a filing —
+    # it is the filing, with the date it was actually filed. That makes it a
+    # different *kind* of evidence rather than a cheaper copy of the same
+    # kind, which is why it is recorded as its own input and never merged
+    # into the fundamentals union.
+    filings_block = None
+    if prediction is not None:
+        try:
+            filings_ev = providers.filings.filings_evidence(ticker, limit=10)
+            rows = next((e.data for e in filings_ev if e.ok and e.data), None)
+            if rows:
+                filings_block = {
+                    "filings": rows,
+                    # Counts by form, so a reader sees the shape of recent
+                    # activity before reading any single row.
+                    "by_form": {
+                        form: sum(1 for r in rows if r["form"] == form)
+                        for form in sorted({r["form"] for r in rows})
+                    },
+                    "latest": rows[0] if rows else None,
+                    "source": "SEC EDGAR",
+                }
+            ledger.record_fabric(
+                label="SEC filings",
+                kind="fundamental",
+                evidence=filings_ev,
+                detail=(f"{_plural(len(rows), 'recent filing')}" if rows else "no filings resolved"),
+                used_for=["primary-source evidence", "filing recency"],
+            )
+
+            # XBRL company facts: the numbers as the company itself tagged
+            # them, with the fiscal year, the unit, the form and the filing
+            # date attached. This is the one place in the product where a
+            # figure can be traced to a specific document rather than to a
+            # vendor's extraction of one — which is exactly what makes it
+            # worth a separate capability from `statements`.
+            # Point-in-time timeline: what each filing said when it was
+            # filed, restatements preserved. The trends above read the current
+            # record; this is the only thing that can say the current record
+            # differs from what was originally reported.
+            timeline_ev = providers.filings.timeline_evidence(ticker)
+            timeline = next((e.data for e in timeline_ev if e.ok and e.data), None)
+            if timeline:
+                revisions = _restatements(timeline)
+                if revisions:
+                    filings_block = filings_block or {"source": "SEC EDGAR"}
+                    filings_block["restatements"] = revisions[:8]
+            if timeline_ev:
+                ledger.record_fabric(
+                    label="Point-in-time filings",
+                    kind="fundamental",
+                    evidence=timeline_ev,
+                    detail=(f"{len(timeline)} filed observations"
+                            if timeline else "no point-in-time record"),
+                    used_for=["restatement detection", "look-ahead-free reads"],
+                )
+
+            facts_ev = providers.filings.facts_evidence(ticker)
+            facts = next((e.data for e in facts_ev if e.ok and e.data), None)
+            if facts:
+                # Trimmed to the most recent years per concept. The full
+                # history is available from the same call, but a research
+                # page wants a trend, not a decade of rows.
+                filings_block = filings_block or {"source": "SEC EDGAR"}
+                filings_block["xbrl"] = {
+                    concept: series[:6]
+                    for concept, series in facts.items() if series
+                }
+                # A trend the reader can check against the rows beside it —
+                # computed from consecutive fiscal years of the *same*
+                # concept, so no two periods are ever compared across
+                # different line items.
+                filings_block["xbrl_trend"] = _xbrl_trends(facts)
+            if facts_ev:
+                ledger.record_fabric(
+                    label="XBRL reported facts",
+                    kind="fundamental",
+                    evidence=facts_ev,
+                    detail=(f"{len(facts)} tagged concepts" if facts
+                            else "no XBRL facts for this filer"),
+                    used_for=["primary-source figures", "multi-year trend"],
+                )
+        except Exception:  # noqa: BLE001 — additive block, never fatal
+            logger.exception("filings lookup failed for %s", ticker)
+            for gap in ("SEC filings", "Point-in-time filings", "XBRL reported facts"):
+                ledger.record_gap(label=gap, kind="fundamental")
+
+    # ── Step 3: Sentiment (after technicals — reuses the resolved company name)
+    sentiment_data: Optional[dict[str, Any]] = None
+    sentiment_obj = AggregateSentiment()
+    news_ev: list = []
+    if fast:
+        ledger.record(
+            label="News & headlines", kind="evidence",
+            missing_reason="fast mode — evidence gathering and the narrative layer are skipped",
+            used_for=["news factor", "evidence weighting", "sentiment"],
+        )
+    if not fast:
+        company_name = technicals.get("company_name", "") or ""
+        try:
+            # Headlines through the NewsProvider chain (NewsAPI → GNews →
+            # Yahoo RSS → Tavily → stale cache); the keyword scorer is unchanged.
+            # Every news vendor, concurrently. News is the clearest case
+            # against a fallback chain: vendors do not carry the same
+            # stories, so stopping at the first success returns a *smaller*
+            # answer rather than a faster one. Merged by URL then canonical
+            # title, with corroboration recorded.
+            news_ev = providers.news.news_evidence(ticker, company_name, limit=12)
+            merged_news = fabric.merge_news(news_ev)
+            news_stream = merged_news
+            ledger.record_fabric(
+                label="News & headlines",
+                kind="evidence",
+                evidence=news_ev,
+                detail=(f"{merged_news['unique']} unique of {merged_news['collected']} collected · "
+                        f"{merged_news['corroborated']} corroborated"),
+                used_for=["news factor", "evidence weighting", "sentiment"],
+            )
+            news_categories = _categorise_news(merged_news["headlines"])
+            news_result = _as_result(merged_news["headlines"], merged_news["providers"])
+            if news_result.ok and news_result.data:
+                headline_dicts = [
+                    {
+                        "title": h.title,
+                        "source": h.source,
+                        "url": h.url,
+                        "published": h.published_at,
+                        "is_breaking": sentiment_analyzer._detect_breaking(h.title),
+                    }
+                    for h in news_result.data
+                ]
+                sentiment_obj = sentiment_analyzer.analyze_headlines(headline_dicts)
+                logger.info(
+                    "sentiment %s: %d headlines via %s",
+                    ticker, len(headline_dicts), news_result.source,
+                )
+            else:
+                sentiment_obj = sentiment_analyzer.analyze_ticker(ticker, company_name=company_name)
+            sentiment_data = {
+                "headline_count": sentiment_obj.headline_count,
+                "average_score":  sentiment_obj.average_score,
+                "dominant_label": sentiment_obj.dominant_label.value,
+                "status": "ok",
+                "headlines": [
+                    {
+                        "title":        h.headline,
+                        "score":        h.score,
+                        "label":        h.label.value,
+                        "source":       h.source,
+                        "url":          h.url,
+                        "published_at": h.published_at,
+                    }
+                    for h in sentiment_obj.headlines
+                ],
+            }
+            if not sentiment_obj.headline_count:
+                # Nothing was read. `AggregateSentiment()` carries 0.0 and
+                # "Neutral" for that, which is a *measurement* of neutral
+                # tone - and the narrative layer records `average_score` as
+                # a fact. No headlines is the absence of a score.
+                sentiment_data["average_score"] = None
+                sentiment_data["dominant_label"] = None
+                sentiment_data["status"] = _news_state(news_ev)
+                sentiment_data["sources_failed"] = sorted(
+                    e.provider for e in news_ev if not e.ok and e.error != _NO_DATA_ANSWER
+                )
+        except Exception:
+            logger.exception("Sentiment analysis failed for %s", ticker)
+            ledger.record(
+                label="News & headlines", kind="evidence",
+                missing_reason="every news vendor failed",
+                used_for=["news factor", "evidence weighting", "sentiment"],
+            )
+            sentiment_data = {
+                "error":          "Sentiment sources unavailable",
+                "headline_count": 0,
+                "average_score":  None,
+                "dominant_label": None,
+                "status":         "unavailable",
+                "note":           "Sentiment analysis failed",
+            }
+
+    # ── Step 3b: News evidence methodology (v2.1 §7) — decay, novelty,
+    # clustering, confirmation → effective evidence for the engine. The raw
+    # sentiment block keeps its contract; additive fields report the method.
+    news_evidence = None
+    if sentiment_obj.headline_count:
+        try:
+            news_evidence = news_scoring.score_headlines([
+                {
+                    "title": h.headline, "score": h.score, "source": h.source,
+                    "url": h.url, "published_at": h.published_at,
+                }
+                for h in sentiment_obj.headlines
+            ])
+            if sentiment_data is not None:
+                sentiment_data["n_eff"] = news_evidence.n_eff
+                sentiment_data["s_eff"] = news_evidence.s_eff
+                sentiment_data["clusters"] = news_evidence.clusters
+                sentiment_data["method_note"] = news_evidence.note
+                for row, scored in zip(sentiment_data.get("headlines", []), news_evidence.headlines):
+                    row["event_type"] = scored.event_type
+                    row["evidence_weight"] = scored.weight
+
+            # Re-attach what the fan-out learned that the keyword scorer does
+            # not model: which vendors independently carried each story, the
+            # publisher's own image, and any vendor-scored sentiment. The
+            # scorer consumes only title/score/source, so without this the
+            # merge's whole advantage would be discarded at serialisation.
+            if news_stream and sentiment_data:
+                by_title = {
+                    (h.title or "").strip().lower(): h
+                    for h in news_stream["headlines"]
+                }
+                for row in sentiment_data.get("headlines", []):
+                    merged = by_title.get((row.get("title") or "").strip().lower())
+                    if not merged:
+                        continue
+                    row["corroborated_by"] = merged.corroborated_by
+                    row["image_url"] = merged.image_url
+                    row["sentiment_score"] = merged.sentiment_score
+                    row["sentiment_label"] = merged.sentiment_label
+        except Exception:  # noqa: BLE001 — methodology layer must never break research
+            logger.exception("News scoring failed for %s", ticker)
+            ledger.record_gap(label="News & headlines", kind="evidence")
+
+    # ── Step 4: Quantitative scoring (docs/SCORING.md v2.1). The engine is
+    # the primary verdict source; the v1 point system remains solely as the
+    # fallback for short price histories (< 60 bars) or scoring failures.
+    # v4.5: deterministic technical intelligence from the frame we already hold.
+    tech_intel = None
+    if scoring_frame is not None:
+        try:
+            tech_intel = technical_intelligence.build(scoring_frame)
+        except Exception:  # noqa: BLE001 — presentation layer must never break research
+            logger.exception("technical intelligence failed for %s", ticker)
+            ledger.record_gap(label="Technical intelligence", kind="market")
+
+    # v4.5 P0-B: street & insider intelligence (Finnhub free tier, 6h cache).
+    street_intel = None
+    if prediction is not None:
+        try:
+            # Fanned out rather than chained: it was a one-link
+            # FallbackChain, which made the capability invisible to the
+            # fabric and left it out of the provenance roster.
+            street_ev = providers.fundamentals.street_evidence(ticker)
+            street_result = providers.fundamentals.get_street(ticker)
+            ledger.record_fabric(
+                label="Street & insider activity",
+                kind="fundamental",
+                evidence=street_ev,
+                detail="analyst ratings, EPS surprises, insider sentiment",
+                used_for=["presentation only — never a scoring input"],
+            )
+            if street_result.ok:
+                street_intel = street_intelligence.build(street_result.data)
+        except Exception:  # noqa: BLE001 — additive block, never fatal
+            logger.exception("street intelligence failed for %s", ticker)
+            ledger.record_gap(label="Street & insider activity", kind="fundamental")
+
+    scorecard = None
+    if prediction is not None and scoring_frame is not None:
+        try:
+            spy_result = providers.market_data.get_series("SPY", "1y")
+            ledger.record(
+                label="SPY benchmark series",
+                kind="market",
+                result=spy_result,
+                detail="1y daily bars",
+                used_for=["relative strength vs benchmark"],
+            )
+            spy_frame = (
+                _series_to_dataframe(spy_result.data)
+                if spy_result.ok and spy_result.data.bars else None
+            )
+            stress = _stress_inputs()
+            # Surfaced as well as scored. These four series gate the verdict
+            # through the engine's stress model, and until now the reader saw
+            # a gated verdict with no way to see what gated it — the inputs
+            # were fetched, consumed and discarded on every run.
+            macro_context = _macro_context(stress)
+            backtest_recent = (peek_backtest(ticker) or {}).get("recent", {})
+            last_bar_age_days = max(
+                0.0,
+                (datetime.now(timezone.utc).date()
+                 - date.fromisoformat(scoring_frame.index[-1].strftime("%Y-%m-%d"))).days,
+            ) if len(scoring_frame) else None
+            scorecard = score_ticker(
+                scoring_frame,
+                srm=multiplier if multiplier is not None else 1.0,
+                price=prediction.current_price,
+                pe_ratio=prediction.pe_ratio,
+                forward_pe=prediction.forward_pe,
+                analyst_target=prediction.analyst_target,
+                beta=prediction.beta,
+                sentiment_avg=(news_evidence.s_eff if news_evidence
+                               else (sentiment_obj.average_score if sentiment_obj.headline_count else None)),
+                headline_count=(news_evidence.n_eff if news_evidence
+                                else float(sentiment_obj.headline_count)),
+                spy_frame=spy_frame,
+                days_to_earnings=days_to_earnings,
+                data_confidence=series_confidence,
+                gross_profit_over_assets=quality_inputs.get("gross_profit_over_assets"),
+                net_issuance_yoy=quality_inputs.get("net_issuance_yoy"),
+                asset_growth_yoy=quality_inputs.get("asset_growth_yoy"),
+                earnings_surprise_pct=pead_inputs.get("surprise_pct"),
+                days_since_earnings=pead_inputs.get("days_since"),
+                nfci=stress.get("nfci"),
+                credit_spread_z=stress.get("credit_spread_z"),
+                vix_percentile=stress.get("vix_percentile"),
+                term_spread=stress.get("term_spread"),
+                price_age_days=last_bar_age_days,
+                news_age_hours=news_evidence.median_age_hours if news_evidence else None,
+                model_rolling_ic=backtest_recent.get("rolling_ic_last"),
+                recent_verdict_flips=backtest_recent.get("verdict_flips_last6"),
+            )
+        except Exception:  # noqa: BLE001 — scoring must never take down research
+            logger.exception("Scoring engine failed for %s — using legacy verdict", ticker)
+
+    # ── Step 4b: analyst snapshot persistence (plan item 10 — stored, not scored)
+    if prediction is not None:
+        analyst_store.record_snapshot(
+            ticker,
+            price=prediction.current_price,
+            analyst_target=prediction.analyst_target,
+            pe_ratio=prediction.pe_ratio,
+            forward_pe=prediction.forward_pe,
+            eps=prediction.eps,
+        )
+
+    if scorecard is not None:
+        # The engine's verdicts replace the legacy signal fields (same field
+        # names and value vocabulary — contract shape unchanged).
+        technicals["raw_signal"] = scorecard.raw_verdict
+        technicals["risk_adjusted_signal"] = scorecard.verdict
+        prediction.raw_signal = SignalVerdict(scorecard.raw_verdict)
+        prediction.risk_adjusted_signal = SignalVerdict(scorecard.verdict)
+
+    # ── Step 5: Decision synthesis (rationale text; confidence source depends
+    # on path: scorecard when available, legacy agreement formula otherwise)
+    verdict = technicals.get("risk_adjusted_signal") or "Hold"
+
+    macro_obj = _macro_assessment(multiplier, macro_stats)
+    tech_obj = prediction if prediction is not None else TechnicalAnalysis(ticker=ticker)
+
+    # One decision authority. The scorecard, where one ran, has already set
+    # `verdict` above and that is what the response returns — so it is passed
+    # in here rather than letting this compute a second, competing verdict
+    # whose rationale and confidence breakdown were the ones the response
+    # carried. That divergence could put "Hold" beside "Positive sentiment
+    # boosted signal", which describes a decision to buy.
+    #
+    # Where no scorecard ran there is no other authority, and `None` keeps the
+    # legacy synthesis exactly as it was.
+    authoritative = SignalVerdict(verdict) if scorecard is not None else None
+    decision_verdict, confidence, rationale = compute_decision(
+        macro_obj, tech_obj, sentiment_obj, authoritative_verdict=authoritative,
+    )
+    breakdown = confidence_breakdown(macro_obj, tech_obj, sentiment_obj, decision_verdict)
+    risk_level = derive_risk_level(
+        volatility=tech_obj.volatility,
+        # The assessment already resolved an unmeasured regime to the identity
+        # and recorded that it did; reading it back from there keeps one
+        # answer rather than two.
+        risk_multiplier=macro_obj.risk_multiplier,
+        max_drawdown=tech_obj.max_drawdown,
+        beta=tech_obj.beta,
+    )
+
+    confidence_pct = round(confidence * 100)
+    if scorecard is not None:
+        confidence_pct = scorecard.confidence
+        rationale = (
+            f"Composite score {scorecard.raw_score:+.2f} "
+            f"(momentum {scorecard.momentum_score if scorecard.momentum_score is not None else 'n/a'}, "
+            f"fundamental {scorecard.fundamental_score if scorecard.fundamental_score is not None else 'n/a'}, "
+            f"news {scorecard.news_score if scorecard.news_score is not None else 'n/a'}; "
+            f"macro gate {scorecard.macro_gate}); {rationale}"
+        )
+        breakdown = [{"component": "Model confidence base", "points": 100}] + [
+            {"component": f"Less: {loss.component}", "points": -loss.points}
+            for loss in scorecard.confidence_losses
+        ]
+
+    # ── Step 5: LLM explanation layer (optional; never fatal; fast mode skips)
+    ai: Optional[dict[str, Any]] = None
+    if not fast and prediction is not None:
+        try:
+            ai = llm_service.explain_recommendation(
+                depth=depth,
+                payload=llm_service.build_payload(
+                    ticker=ticker,
+                    recommendation=verdict_to_recommendation(SignalVerdict(verdict)),
+                    confidence=confidence_pct,
+                    risk=risk_level,
+                    verdict=verdict,
+                    rationale=rationale,
+                    macro={"risk_multiplier": multiplier, **macro_stats},
+                    technicals=technicals,
+                    sentiment=sentiment_data,
+                    confidence_breakdown=breakdown,
+                    quant=(
+                        {
+                            "raw_score": scorecard.raw_score,
+                            "ungated_score": scorecard.ungated_score,
+                            "momentum_score": scorecard.momentum_score,
+                            "fundamental_score": scorecard.fundamental_score,
+                            "quality_score": scorecard.quality_score,
+                            "news_score": scorecard.news_score,
+                            "macro_gate": scorecard.macro_gate,
+                            "conflict_index": scorecard.conflict_index,
+                            "uncertainty": scorecard.uncertainty,
+                            "risk_score": scorecard.risk_score,
+                            "weights_used": scorecard.weights_used,
+                            "regimes": scorecard.regimes,
+                            # Full per-factor list (name/family/contribution) —
+                            # llm_service._group_factor_impacts sums this into
+                            # the momentum/quality/value/pead/news subtotals.
+                            "factors": [
+                                {"name": row.name, "family": row.family, "contribution": row.contribution}
+                                for row in scorecard.factors
+                                if row.score is not None
+                            ],
+                            "top_contributions": sorted(
+                                (
+                                    {"factor": row.name, "contribution": row.contribution}
+                                    for row in scorecard.factors
+                                    if row.score is not None
+                                ),
+                                key=lambda item: abs(item["contribution"]),
+                                reverse=True,
+                            )[:6],
+                            "top_positive": sorted(
+                                (
+                                    {"factor": row.name, "contribution": row.contribution}
+                                    for row in scorecard.factors
+                                    if row.score is not None and row.contribution > 0
+                                ),
+                                key=lambda item: item["contribution"],
+                                reverse=True,
+                            )[:5],
+                            "top_negative": sorted(
+                                (
+                                    {"factor": row.name, "contribution": row.contribution}
+                                    for row in scorecard.factors
+                                    if row.score is not None and row.contribution < 0
+                                ),
+                                key=lambda item: item["contribution"],
+                            )[:5],
+                        }
+                        if scorecard is not None else None
+                    ),
+                )
+            )
+        except Exception:  # belt and braces — the service already never raises
+            logger.exception("LLM layer raised unexpectedly for %s", ticker)
+            ai = None
+
+    # Inputs the engine wanted but did not get. Recorded as explicitly absent
+    # rather than left out, because a factor that is missing and a factor that
+    # scored neutral look identical in a decomposition otherwise.
+    if not quality_inputs:
+        ledger.record(
+            label="Quality fundamentals", kind="fundamental",
+            missing_reason="gross profitability / issuance / asset growth unavailable for this symbol",
+            used_for=["quality factors"],
+        )
+    if not pead_inputs:
+        ledger.record(
+            label="Earnings surprise history", kind="fundamental",
+            missing_reason="no recent reported surprise available",
+            used_for=["post-earnings-drift factor"],
+        )
+
+    elapsed = round(time.time() - start, 2)
+    logger.info(
+        "research %s: verdict=%s confidence=%d risk=%s ai=%s mode=%s elapsed=%.2fs",
+        ticker, verdict, confidence_pct, risk_level,
+        (ai or {}).get("generated"), "fast" if fast else "full", elapsed,
+    )
+
+    # How trustworthy the evidence behind this response is — a different
+    # question from what the verdict says, and one the verdict alone cannot
+    # answer. Reuses the same values already computed above for scoring
+    # rather than recomputing anything: `bars` and `last_bar_age_days` are
+    # only ever assigned in the same branch that produces `scorecard`, so
+    # both are referenced here exactly when `scorecard is not None` guards
+    # the reference — never on a path where they would be undefined.
+    #
+    # `asset_type` is passed as None: this endpoint has no asset-type
+    # classification anywhere in it, and explore_eligibility's own gate
+    # treats an unknown type as passing rather than failing, so this is the
+    # honest value rather than a stand-in for "known to be common equity".
+    # `validation_state` is likewise None — this endpoint runs the classic
+    # scoring pipeline, not the LangGraph validator (`/api/analysis-runs`
+    # and `/api/ask` do), so there genuinely is no validation state to report
+    # here, and None correctly leaves that one gate unable to fire rather
+    # than asserting a conflict that was never checked for.
+    from src.services import decision_quality as decision_quality_service
+
+    decision_quality_result = decision_quality_service.assess(
+        asset_type=None,
+        bars=bars if scorecard is not None else None,
+        price=prediction.current_price if scorecard is not None else None,
+        price_age_days=last_bar_age_days if scorecard is not None else None,
+        has_scorecard=scorecard is not None,
+        data_completeness=scorecard.data_completeness if scorecard is not None else None,
+        confidence=scorecard.confidence if scorecard is not None else None,
+        validation_state=None,
+    )
+
+    response = {
+        "ticker":  ticker,
+        "macro":   {"risk_multiplier": multiplier, **macro_stats},
+        "technicals": technicals,
+        "sentiment":  sentiment_data,
+        "verdict":    verdict,
+        # Additive fields (v1.1): deterministic synthesis shared with the CLI pipeline.
+        "confidence":  confidence_pct,
+        "confidence_breakdown": breakdown,
+        "risk_level":  risk_level,
+        "rationale":   rationale,
+        "quant":       scorecard.model_dump() if scorecard is not None else None,
+        # How trustworthy the evidence is — never a probability of profit.
+        # See src/services/decision_quality.py for what STRONG/ACCEPTABLE/
+        # WEAK/INSUFFICIENT mean and how each is decided.
+        "decision_quality": decision_quality_result.model_dump(),
+        # v4.5 additive: deterministic technical read of the same OHLCV frame
+        # the engine scored. Presentation intelligence only — never a scoring
+        # input, never fatal, absent when history is too thin.
+        # Multi-source blocks (v5.1). Additive and presentation-only: the
+        # scoring engine is untouched by them, so a vendor outage here costs
+        # a panel and never a verdict.
+        "profile": profile_block,
+        "filings": filings_block,
+        "ratios": ratios_block,
+        "macro_context": macro_context,
+        "ownership": ownership_block,
+        "analyst": analyst_block,
+        "consensus_price": consensus,
+        "series_integrity": series_integrity,
+        "statements": statements,
+        "news_stream": {
+            "collected": news_stream["collected"],
+            "unique": news_stream["unique"],
+            "providers": news_stream["providers"],
+            "corroborated": news_stream["corroborated"],
+            "with_image": news_stream.get("with_image", 0),
+            "sentiment": news_stream.get("sentiment"),
+            "categories": news_categories,
+        } if news_stream else None,
+        "technical_intelligence": tech_intel,
+        "street_intelligence": street_intel,
+        "ai":          ai,
+        "disclaimer":  DISCLAIMER,
+        "elapsed_seconds": elapsed,
+        "mode":  "fast" if fast else "full",
+        # Chain of custody: every input this verdict was computed from, which
+        # vendor answered, how degraded it was and what it fed. Assembled from
+        # the same ProviderResults the analysis consumed, so it cannot drift
+        # from the analysis it describes.
+        "provenance": ledger.build(
+            engine_version=(scorecard.model_version if scorecard is not None else None),
+            elapsed_seconds=elapsed,
+            confidence_losses=(
+                [{"component": loss.component, "points": loss.points}
+                 for loss in scorecard.confidence_losses]
+                if scorecard is not None else []
+            ),
+            ai_generated=(ai or {}).get("generated"),
+            ai_model=(ai or {}).get("model"),
+        ),
+    }
+
+    # ── Automatic history persistence (v3.5, additive) ───────────────────────
+    # Every completed run is recorded for the authenticated user without any
+    # frontend action. Failures here must never fail the analysis: the whole
+    # step is best-effort, logged, and skipped entirely when Supabase or Clerk
+    # verification is not configured.
+    response["history_id"] = None
+    if clerk_user is not None and prediction is not None:
+        db = database.get_client()
+        if db is not None:
+            try:
+                response["history_id"] = AnalysisRepository(db).record(clerk_user, response)
+            except Exception:  # noqa: BLE001 — persistence must never break research
+                logger.exception("history persistence failed for %s", ticker)
+
+    return response
+
+
+@app.get("/api/chart/{ticker}")
+def get_chart(ticker: str, period: str = "3mo"):
+    """Daily close + volume series through the MarketDataProvider chain.
+
+    Four outcomes, and they used to be two. A provider failure, a security
+    with genuinely no history, and a request for a window nobody named all
+    returned `{"prices": []}` — an empty chart, drawn without complaint. The
+    reader could not tell "this vendor is down" from "this name has never
+    traded", and an unrecognised period silently became three months, so the
+    axis was right and the range was not what was asked for.
+    """
+    ticker = ticker.upper().strip()
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+    if period not in PERIOD_DAYS:
+        # 422 rather than a quiet fallback: an unrecognised window changes the
+        # meaning of the request, and answering a different question is worse
+        # than refusing this one.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown period {period!r}. Expected one of: "
+                f"{', '.join(sorted(PERIOD_DAYS))}."
+            ),
+        )
+
+    try:
+        result = providers.market_data.get_series(ticker, period)
+    except Exception:
+        logger.exception("Chart fetch failed for %s period=%s", ticker, period)
+        return {
+            "ticker": ticker, "period": period, "prices": [],
+            "status": "error",
+            "error": "Price history could not be read.",
+        }
+
+    if not result.ok:
+        # The vendors were asked and none answered. Not an empty chart.
+        return {
+            "ticker": ticker, "period": period, "prices": [],
+            "status": "unavailable",
+            "error": result.error or "No provider returned a price series.",
+            "sources_consulted": result.sources_consulted,
+        }
+
+    if not result.data.bars:
+        # Every provider answered and none had a bar for this window. That is
+        # a fact about the security, not about the providers.
+        return {
+            "ticker": ticker, "period": period, "prices": [],
+            "status": "empty",
+            "error": None,
+            "source": result.source,
+            "detail": f"No sessions returned for {ticker} over {period}.",
+        }
+
+    prices = [
+        {
+            "date": bar.date,
+            "close": round(bar.close, 2),
+            "volume": bar.volume,
+        }
+        for bar in result.data.bars
+    ]
+    logger.info(
+        "chart %s %s: %d bars via %s%s",
+        ticker, period, len(prices), result.source, " (stale)" if result.stale else "",
+    )
+    return {
+        "ticker": ticker,
+        "period": period,
+        "prices": prices,
+        "status": "stale" if result.stale else "ok",
+        "source": result.source,
+        "stale": result.stale,
+    }
+
+
+@app.get("/api/knowledge/{ticker}")
+def knowledge(ticker: str):
+    """Company ecosystem: merged knowledge graph, timeline and SEC-grounded
+    findings. Additive and independent of /api/research — a failure here
+    never affects analysis."""
+    from src.services import company_intelligence
+
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+    return company_intelligence.build(symbol)
+
+
+class NarrativeRequest(BaseModel):
+    snapshot_id: str = Field(min_length=32, max_length=32, pattern=r"^[0-9a-f]{32}$")
+    depth: Literal["beginner", "intermediate", "advanced"] = "intermediate"
+
+
+@app.post("/api/research/{ticker}/narrative")
+def research_narrative(
+    ticker: str,
+    body: NarrativeRequest,
+    _user: str = Depends(require_clerk_user),
+):
+    """
+    Explain an earlier research run at another depth.
+
+    The narrative is rewritten from the exact evidence envelope the run
+    produced, which the server holds for the narrative cache lifetime — no
+    market-data, filings, news or macro provider is called again, and every
+    depth cites the same evidence ids with the same values.  The decision is
+    the engine's and is attached verbatim; depth never changes it.
+    """
+    ticker = ticker.upper().strip()
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+    try:
+        ai = llm_service.explain_snapshot(body.snapshot_id, body.depth, ticker)
+    except llm_service.SnapshotExpired:
+        raise HTTPException(
+            status_code=410,
+            detail="The evidence behind this research run is no longer held on the server. "
+                   "Run the research again to explain it at another depth.",
+        )
+    return {"ticker": ticker, "depth": body.depth, "ai": ai}
+
+
+@app.get("/api/research/providers/health")
+def research_provider_health():
+    """Per-provider research status: configured, available, capabilities.
+    Names and booleans only — never key material."""
+    from src.services.research import health as research_health
+
+    return {"providers": research_health(), "order": os.getenv("RESEARCH_PROVIDER_ORDER", "default")}
+
+
+@app.get("/api/graph/expand")
+def graph_expand(node: str = Query(..., max_length=120), label: str = Query(default="", max_length=120)):
+    """Expand any knowledge-graph node into its neighbours — the traversal
+    behind the Knowledge Graph Explorer. Every node type is a valid entry
+    point, so exploration is continuous."""
+    from src.services import graph_service
+
+    return graph_service.expand(node, label)
+
+
+@app.get("/api/graph/workspace")
+def graph_workspace(
+    symbols: str = Query(..., max_length=60, description="Comma-separated tickers"),
+    hops: int = Query(default=2, ge=0, le=3),
+    node_types: str = Query(default=""),
+    edge_types: str = Query(default=""),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    before: str = Query(default=""),
+):
+    """The Knowledge Graph Workspace payload: a bounded, filtered working
+    graph over one or more companies, with analytics and (for multi-select)
+    shared neighbours. `before` reconstructs the graph as of a date."""
+    from src.services import graph_service
+
+    return graph_service.workspace(
+        symbols.split(","),
+        hops=hops,
+        node_types={t.strip() for t in node_types.split(",") if t.strip()} or None,
+        edge_types={t.strip() for t in edge_types.split(",") if t.strip()} or None,
+        min_confidence=min_confidence,
+        before=before or None,
+    )
+
+
+@app.get("/api/graph/path")
+def graph_path(
+    symbols: str = Query(..., max_length=60),
+    source: str = Query(..., max_length=120),
+    target: str = Query(..., max_length=120),
+):
+    """Shortest deterministic path between two entities, edge by edge."""
+    from src.services import graph_service
+
+    return {"path": graph_service.path_between(symbols.split(","), source, target)}
+
+
+@app.get("/api/factors", tags=["research"])
+def get_factor_lab(
+    universe: str = Query("mega30", description="named universe to evaluate"),
+    years: float = Query(2.5, ge=0.5, le=10.0),
+    horizon: int = Query(21, ge=5, le=126, description="forward-return horizon in trading days"),
+):
+    """Published cross-sectional evidence for every factor in the scoring engine.
+
+    Answers the question single-ticker views structurally cannot: does this
+    factor rank names correctly? Rank IC per observation date, Newey-West
+    corrected for the overlap that inflates naive t-statistics, plus the
+    quantile spread and the full ranked cross-section on the latest date.
+
+    This endpoint is read-only. A missing artifact returns BUILD_REQUIRED;
+    it never starts SEC downloads, panel construction, or estimator work in
+    the web process. Caveats ship inside published artifacts.
+    """
+    if not factor_lab_service.request_supported(years, horizon):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Factor builds are limited to documented presets.",
+                "years": list(factor_lab_service.SUPPORTED_WINDOWS_YEARS),
+                "horizons": list(factor_lab_service.SUPPORTED_HORIZONS),
+            },
+        )
+    return factor_lab_service.run(universe, years, horizon)
+
+
+@app.get("/api/factors/universes", tags=["research"])
+def get_factor_universes():
+    return {"universes": factor_lab_service.available_universes()}
+
+
+def _provider_groups() -> dict[str, Any]:
+    """Each provider family's vendors, as the capability views read them."""
+    return {
+        "market": providers.market_data.vendors,
+        "fundamentals": providers.fundamentals.vendors,
+        "news": providers.news.vendors,
+        "macro": providers.macro.vendors,
+        "identity": providers.identity.vendors,
+        "filings": providers.filings.vendors,
+        "official_record": providers.official_record.vendors,
+        "search": providers.search.vendors,
+        "visual": visual_intelligence.IMAGE_VENDORS,
+    }
+
+
+@app.get("/api/providers/registry", tags=["ops"])
+def provider_registry():
+    """Every provider as one record: identity, terms, capabilities, health.
+
+    What the providers page renders. Built on the server from the catalogue,
+    the capability registry and every live adapter instance, so the page has
+    no list of its own to drift (see `src/providers/registry_view.py`). Carries
+    the names of credential variables and whether they are set — never a value
+    — and recent calls by operation, never by symbol.
+    """
+    from src.providers import registry_view
+
+    return registry_view.build(_provider_groups())
+
+
+@app.get("/api/providers/capabilities", tags=["ops"])
+def provider_capabilities():
+    """What every provider can do, and which are live right now.
+
+    Introspection-driven (see `fabric.capability_matrix`), so a newly added
+    vendor appears here without anyone updating a list. Answers the question
+    the orchestrator asks on every request — "who can contribute to this" —
+    and the one a deploy engineer asks — "is the key actually configured".
+
+    Reports `configured` and `healthy` separately because they fail for
+    different reasons: a missing key is a deploy problem, a tripped circuit is
+    an outage. Only the *name* of the environment variable is exposed, never
+    its value.
+    """
+    matrix = fabric.capability_matrix(_provider_groups())
+    matrix["visual"] = visual_intelligence.diagnostics()
+    # The registry itself, not just who implements it. The matrix above
+    # answers "which vendors can answer this question"; this answers "what
+    # is the question, how are several answers combined, and which failures
+    # are expected" — which is the part a reader otherwise has to infer from
+    # source. Declared once in `capabilities.py` and emitted verbatim, so
+    # this cannot drift from the behaviour it describes.
+    matrix["registry"] = capabilities.describe()
+    matrix["reconciliation_strategies"] = list(capabilities.RECONCILIATION_STRATEGIES)
+    matrix["failure_modes"] = list(capabilities.FAILURE_MODES)
+    return matrix
+
+
+@app.get("/api/company/{ticker}/media", tags=["research"])
+def company_media(ticker: str, sector: str = "", industry: str = "", name: str = ""):
+    """Verified company identity; retained at the existing route for clients.
+
+    Generic stock imagery is intentionally excluded. ``context`` remains as
+    an explicit null during the compatibility window so an older client never
+    mistakes an absent photograph for a loading or provider failure.
+    """
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+
+    domain = ""
+    resolved_name = name
+    try:
+        # The profile union gives Logo.dev the best recorded domain and name.
+        # No contextual image query is built from sector or industry.
+        merged = fabric.merge_profile(providers.fundamentals.profile_evidence(symbol))
+        if merged:
+            resolved = merged["resolved"]
+            domain = resolved.get("domain") or ""
+            resolved_name = resolved_name or resolved.get("name", "")
+    except Exception:  # noqa: BLE001 — media is never fatal
+        logger.exception("profile lookup failed for %s", symbol)
+
+    return {
+        "ticker": symbol,
+        "identity": visual_intelligence.identity(symbol, domain, resolved_name),
+        "context": None,
+        "domain": domain,
+        "visual_policy": "verified_identity_only",
+    }
+
+
+@app.get("/api/company/{ticker}/record", tags=["research"])
+def company_record(ticker: str):
+    """The official record around a company: Federal Register documents that
+    name it, and — when EDGAR classifies it as healthcare — FDA recalls and
+    the clinical trials it leads. Context only; it never reaches the signal.
+    Each section states whether it answered, found nothing, or failed."""
+    from src.services import official_record
+
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10 or not re.fullmatch(r"[A-Z][A-Z0-9.\-]*", symbol):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+    return official_record.build(symbol)
+
+
+@app.get("/api/ml/capabilities", tags=["ml"])
+def ml_capabilities():
+    """What the machine-learning layer can answer right now, and why not when it cannot.
+
+    Mirrors `/api/providers/capabilities`: every capability reports
+    `available` or `unavailable` with a named reason and the command that
+    would fix it. A page therefore learns the layer is empty by asking, rather
+    than by rendering nothing — and nothing here computes a cheap substitute to
+    have something to show.
+    """
+    return ml_service.capabilities()
+
+
+@app.get("/api/ml/datasets", tags=["ml"])
+def ml_datasets():
+    """The research dataset catalog, including what is deliberately excluded.
+
+    Each entry carries its measured coverage, its point-in-time classification
+    and its survivorship classification. `excluded` lists sources the
+    point-in-time builder refuses as feature inputs, with the reason — a
+    limitation that is enforced rather than merely documented.
+    """
+    return ml_service.dataset_catalog()
+
+
+@app.get("/api/ml/features", tags=["ml"])
+def ml_features():
+    """Every feature and label definition, with rationale and lookback.
+
+    The point-in-time contract is data here, not prose: `lookback_sessions`,
+    `availability_lag_sessions` and `point_in_time_safe` are what the dataset
+    builder enforces and what the leakage guards test.
+    """
+    return ml_service.feature_catalog()
+
+
+@app.get("/api/ml/overview", tags=["ml"])
+def ml_overview():
+    """Headline study state: dataset, universe, regime and per-label verdicts.
+
+    The verdict string is deliberately ordered worst-finding-first — a model
+    that clears the significance bar but loses to transaction costs is reported
+    as losing to costs, not as clearing the bar.
+    """
+    return ml_service.overview()
+
+
+@app.get("/api/ml/labels/{label}", tags=["ml"])
+def ml_label(label: str = FastPath(..., max_length=64, pattern=r"^[a-z0-9_]+$")):
+    """Every model evaluated against one label — losers included.
+
+    The leaderboard is sorted, but nothing is filtered: the experiment
+    distribution accompanies it so the best result can be read against the
+    population it was selected from.
+    """
+    return ml_service.label_report(label)
+
+
+@app.get("/api/ml/registry", tags=["ml"])
+def ml_registry():
+    """Registered models, their status, and the evidence each still lacks.
+
+    `promotion_gates` is emitted verbatim from the registry, so what the UI
+    shows as a requirement is exactly what the code enforces.
+    """
+    return ml_service.registry()
+
+
+@app.get("/api/ml/provenance/{label}/{model_id}", tags=["ml"])
+def ml_provenance(
+    label: str = FastPath(..., max_length=64, pattern=r"^[a-z0-9_]+$"),
+    model_id: str = FastPath(..., max_length=80, pattern=r"^[a-z0-9_]+$"),
+):
+    """The chain from vendor observation to model output.
+
+    Each stage is tagged OBSERVED, DERIVED or MODEL_PREDICTED. It names the
+    inputs behind a prediction; it does not claim a causal account of it, which
+    is a claim the architecture cannot support and therefore does not make.
+    """
+    return ml_service.provenance(label, model_id)
+
+
+@app.get("/api/metrics", tags=["ops"])
+def get_metrics():
+    """Latency percentiles and counters for every instrumented seam.
+
+    Percentiles rather than averages: the distribution here is bimodal — a
+    cache hit at 0.4 ms and a vendor exhausting its retries at 18 s average
+    to a number that never happened. p95/p99 are what an operator can act on.
+
+    Read-only. This used to accept `?reset=true` and clear every counter, so
+    an unauthenticated GET could erase the observability window for everyone —
+    a crawler following links, a prefetch, or a browser reloading the page
+    would silently destroy the evidence an operator was in the middle of
+    reading. Resetting is a mutation and it now lives on a route that says so.
+    """
+    return observability.registry.snapshot()
+
+
+@app.post("/api/metrics/reset", tags=["ops"])
+def reset_metrics(_user: str = Depends(require_clerk_user)):
+    """Start a fresh observability window.
+
+    Authenticated, explicitly authorised by METRICS_RESET_OWNERS, and a POST: it destroys data. A vendor that misbehaved an
+    hour ago stops colouring the current picture, which is a legitimate
+    operational need — it was simply never a read.
+    """
+    owners = {item.strip() for item in os.getenv("METRICS_RESET_OWNERS", "").split(",") if item.strip()}
+    if _user not in owners:
+        raise HTTPException(status_code=403, detail="Metrics reset requires a configured metrics operator (METRICS_RESET_OWNERS).")
+    observability.registry.reset()
+    return {"status": "reset", "snapshot": observability.registry.snapshot()}
+
+
+@app.get("/api/admin/diagnostics", tags=["ops"])
+def admin_diagnostics(
+    _user: str = Depends(require_permission(Permission.VIEW_ADMIN_DIAGNOSTICS)),
+):
+    """Operational state, for an operator.
+
+    Gated on the backend rather than on whether the client drew the link.
+    Hiding a navigation item is a presentation choice; this is the boundary,
+    and an ordinary signed-in account is refused here even if it constructs
+    the request by hand.
+
+    Reports posture, never material: which capabilities are configured, not
+    the values that configure them.
+    """
+    from src.services import database, inference_client, job_store
+
+    access = paper_access_state()
+    inference_health = inference_client.health()
+    inference_commit = inference_health.get("commit")
+    backend_commit = _build_commit()
+    return {
+        "environment": deployment.environment_name(),
+        "build_commit": backend_commit,
+        "deployment_versions": {
+            "backend": backend_commit,
+            "inference": inference_commit or "unknown",
+            "inference_status": inference_health.get("status", "unknown"),
+        },
+        "persistence": {
+            "configured": database.is_configured(),
+            "reachable": database.get_client() is not None,
+        },
+        "authentication": {"clerk_configured": clerk_auth.is_configured()},
+        "paper_trading": {"enabled": access["enabled"], "reason": access["reason"]},
+        "providers": providers.providers_health(),
+        # Where background-job state lives, and whether this deployment's shape
+        # makes that a problem. An operator has no other way to discover that
+        # several workers are each keeping their own job registry — the symptom
+        # is duplicated work and a progress bar that will not settle, neither of
+        # which points at its cause.
+        "background_jobs": job_store.describe(),
+        "metrics": observability.registry.snapshot(),
+    }
+
+
+@app.get("/api/providers/health", tags=["ops"])
+def get_providers_health():
+    """Vendor health: success %, latency, cooldowns, cache and dedupe stats."""
+    return providers.providers_health()
+
+
+@app.get("/api/backtest/{ticker}")
+def get_backtest(ticker: str):
+    """Walk-forward validation of the scoring engine's momentum core (1h cache)."""
+    from src.services import backtest_service
+
+    ticker = ticker.upper().strip()
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+    return backtest_service.run_backtest(ticker)
+
+
+@app.get("/api/screen")
+def get_screen(q: str = Query(..., min_length=1, max_length=120)):
+    """Natural-language ticker screening: lookup or thematic web-grounded search."""
+    from src.services import screen_service
+
+    return screen_service.screen(q)
+
+
+@app.get("/api/quotes")
+def get_quotes(symbols: str = Query(..., description="Comma-separated tickers, max 25")):
+    """
+    Batch quotes for watchlists: price, 1-day and 1-week change per symbol.
+    Served from the MarketDataProvider series cache; per-symbol failures
+    return an error entry rather than failing the batch.
+
+    Each quote also carries the three months of closes it was computed from.
+    A list's sparklines used to request `/api/chart` once per row for the
+    same series this handler had just read, which on a one-request-at-a-time
+    backend queued nine calls behind the quote batch.
+    """
+    requested = [s.strip().upper() for s in symbols.split(",") if s.strip()][:25]
+    if not requested:
+        raise HTTPException(status_code=400, detail="No symbols supplied")
+
+    out: dict[str, Any] = {}
+    for symbol in requested:
+        if len(symbol) > 10:
+            out[symbol] = {"error": "invalid symbol", "status": "invalid"}
+            continue
+        try:
+            result = providers.market_data.get_series(symbol, "3mo")
+            if not result.ok:
+                # Why there is no quote is the reader's business: a provider
+                # outage resolves itself, a name nobody holds does not.
+                out[symbol] = {
+                    "error": "no data",
+                    "status": "unavailable" if result.outage else "no_data",
+                }
+                continue
+            if len(result.data.bars) < 6:
+                # Answered, but a week of sessions does not exist yet (a new
+                # listing) - not a failure and not a price.
+                out[symbol] = {"error": "no data", "status": "insufficient_history"}
+                continue
+            bars = result.data.bars
+            closes = [bar.close for bar in bars]
+            out[symbol] = {
+                "price": round(closes[-1], 2),
+                "as_of": bars[-1].date,
+                "price_basis": "daily close",
+                "change_1d": round((closes[-1] / closes[-2] - 1) * 100, 2) if closes[-2] else None,
+                "change_1w": round((closes[-1] / closes[-6] - 1) * 100, 2) if len(closes) >= 6 and closes[-6] else None,
+                "closes": [round(close, 2) for close in closes if math.isfinite(close)],
+                "source": result.source,
+                "stale": result.stale,
+                "status": "stale" if result.stale else "ok",
+            }
+        except Exception:  # noqa: BLE001 — one bad symbol never fails the batch
+            logger.exception("quote failed for %s", symbol)
+            out[symbol] = {"error": "unavailable", "status": "error"}
+    return {"quotes": out, "count": len(out)}
+
+
+#: Trading sessions per tracker period. Counted on the security's own daily
+#: closes, so a period is "N sessions back", not N calendar days.
+TRACKER_PERIODS = {"1W": 5, "1M": 21, "3M": 63, "6M": 126, "1Y": 252}
+TRACKER_SPARK_SESSIONS = 63
+
+
+def _tracker_row(symbol: str) -> dict[str, Any]:
+    """One tracked security: the latest quote, and performance from daily closes.
+
+    Two observations, kept apart because they are different things: the quote
+    is the latest price a provider reports (with its own timestamp and
+    freshness), and the period returns are computed on daily closes only,
+    through the last close, so a live price is never divided by a stale close
+    from a different source. A period the history cannot cover is null, not
+    extrapolated.
+    """
+    from src.services.alert_engine import freshness as quote_freshness
+
+    now = datetime.now(timezone.utc)
+    row: dict[str, Any] = {"symbol": symbol, "currency": "USD"}
+    quote = providers.market_data.get_price(symbol)
+    if quote.ok and quote.data is not None:
+        q = quote.data
+        row.update(
+            price=q.price, as_of=q.as_of, source=quote.source, cached=quote.cached,
+            freshness=quote_freshness(q.as_of, now), previous_close=q.previous_close,
+            change=(round(q.price - q.previous_close, 4) if q.previous_close else None),
+            change_pct=(round((q.price / q.previous_close - 1) * 100, 4) if q.previous_close else None),
+            quote_status="stale" if quote.stale else "ok",
+        )
+    else:
+        row.update(price=None, quote_status="unavailable" if getattr(quote, "outage", False) else "no_data")
+
+    series = providers.market_data.get_series(symbol, "1y")
+    if series.ok and series.data is not None:
+        closes = [(b.date, b.close) for b in series.data.bars if b.close and math.isfinite(b.close)]
+        if closes:
+            last = closes[-1][1]
+            row["performance"] = {
+                label: (round((last / closes[-1 - n][1] - 1) * 100, 4) if len(closes) > n and closes[-1 - n][1] else None)
+                for label, n in TRACKER_PERIODS.items()
+            }
+            row["history"] = {
+                "source": series.source, "sessions": len(closes), "through": closes[-1][0],
+                "basis": "daily closes", "stale": series.stale,
+            }
+            row["spark"] = [round(c, 4) for _, c in closes[-TRACKER_SPARK_SESSIONS:]]
+            if row.get("price") is None:
+                # No quote: the last close is shown as what it is, never as live.
+                row.update(last_close=last, last_close_date=closes[-1][0])
+    else:
+        row["history"] = None
+    return row
+
+
+@app.get("/api/tracker", tags=["research"])
+def get_tracker(symbols: str = Query(..., max_length=300, description="Comma-separated tickers, max 25")):
+    """Quotes, freshness and period performance for a page of tracked symbols.
+
+    Bounded: 25 symbols per request, fetched with limited concurrency through
+    the provider families' caches (a quote is cached for a minute and a daily
+    series for five), so a watchlist that refreshes on a timer does not turn
+    into a request per row per provider.
+    """
+    from src.providers.parallel import map_concurrent
+
+    requested: list[str] = []
+    for raw in symbols.split(","):
+        symbol = raw.strip().upper()
+        if symbol and symbol not in requested:
+            requested.append(symbol)
+    requested = requested[:25]
+    invalid = [s for s in requested if len(s) > 10 or not re.fullmatch(r"[A-Z^][A-Z0-9.\-^]*", s)]
+    valid = [s for s in requested if s not in invalid]
+    outcomes = map_concurrent(_tracker_row, valid, workers=6, label="tracker")
+    rows = {s: (o.value if o.ok else {"symbol": s, "price": None, "quote_status": "error"}) for s, o in zip(valid, outcomes)}
+    for s in invalid:
+        rows[s] = {"symbol": s, "price": None, "quote_status": "invalid"}
+    return {"rows": [rows[s] for s in requested], "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/internal/alerts/evaluate", tags=["ops"])
+def evaluate_alerts(x_scheduler_token: str = Header(default="", alias="X-Scheduler-Token")):
+    """One pass of the alert evaluator, for the scheduler only.
+
+    Authenticated by a shared secret (`ALERTS_SCHEDULER_TOKEN`, from Secret
+    Manager) compared in constant time, on top of Cloud Run's own IAM. It takes
+    no parameters, so it cannot be used to fetch anything a caller chooses, and
+    the website's proxy refuses every `/api/internal/` path before it reaches
+    here. Without the secret configured it answers 503 rather than running
+    unauthenticated.
+    """
+    import hmac
+
+    from src.services import alert_engine, database
+
+    expected = os.getenv("ALERTS_SCHEDULER_TOKEN", "")
+    if len(expected) < 24:
+        raise HTTPException(status_code=503, detail="The alert scheduler is not configured on this deployment.")
+    if not hmac.compare_digest(x_scheduler_token.encode(), expected.encode()):
+        raise HTTPException(status_code=403, detail="Not the scheduler.")
+    client = database.get_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="Persistence is not configured; there are no alerts to evaluate.")
+    return alert_engine.run(client)
+
+
+class AskBody(BaseModel):
+    ticker: str = Field(..., min_length=1, max_length=10)
+    question: str = Field(..., min_length=3, max_length=400)
+
+
+@app.post("/api/ask", tags=["agents"])
+def ask_finsignal(body: AskBody):
+    """Answer one question about one security's analysis, from its own evidence.
+
+    Grounded rather than general: the context is a single analysis run, so an
+    answer that cites something is citing something this system measured. The
+    signal, risk and confidence are attached after generation, copied from the
+    scorecard — a model that ignores its instructions changes the prose and
+    nothing else.
+    """
+    symbol = body.ticker.upper().strip()
+    if not symbol.replace(".", "").replace("-", "").isalnum():
+        raise HTTPException(status_code=422, detail="Invalid ticker")
+
+    from src.agents import graph
+    from src.services import ask_service
+
+    try:
+        state = graph.run(symbol)
+    except Exception:
+        logger.exception("ask: analysis failed for %s", symbol)
+        return availability.dependency_unavailable(
+            "The analysis needed to answer this could not be produced.",
+            reason="ANALYSIS_FAILED",
+        ).payload(symbol=symbol)
+
+    results = (state.get("agent_results") or {}).values()
+    evidence = [e for r in results for e in r.evidence]
+
+    answer = ask_service.ask(
+        body.question,
+        signal=state.get("model_signal"),
+        confidence=state.get("confidence"),
+        risk_score=state.get("risk_score"),
+        data_completeness=state.get("data_completeness"),
+        card=state.get("scorecard"),
+        evidence=evidence,
+    )
+    return availability.available(
+        symbol=symbol, run_id=state.get("run_id"), **answer.model_dump(),
+    )
+
+
+class WhatIfBody(BaseModel):
+    ticker: str = Field(..., min_length=1, max_length=10)
+    #: A preset key rather than a free `lever`+`change` pair. The levers map to
+    #: real engine arguments, and an open numeric field would let a caller ask
+    #: for a P/E of -400 or a regime the model has no meaning for. The presets
+    #: are the scenarios this system can honestly simulate.
+    scenario: str = Field(..., min_length=1, max_length=40)
+
+
+@app.post("/api/what-if", tags=["agents"])
+def what_if(body: WhatIfBody):
+    """Re-score one security under one perturbed input. Simulation only.
+
+    Nothing here is persisted. The perturbed price frame is a copy, the
+    resulting scorecard is discarded with the response, and no stored analysis,
+    portfolio, saved run or Explore ranking snapshot is touched — the simulator
+    calls the scoring engine and reads the answer. Every response carries
+    `simulation: true`.
+    """
+    symbol = body.ticker.upper().strip()
+    if not symbol.replace(".", "").replace("-", "").isalnum():
+        raise HTTPException(status_code=422, detail="Invalid ticker")
+
+    from src.agents.orchestrator import attach_scorecard, build_context
+    from src.services import whatif_service
+
+    chosen = whatif_service.preset(body.scenario)
+    if chosen is None:
+        return availability.unsupported(
+            "That scenario is not one this simulator offers.", reason="UNKNOWN_SCENARIO",
+        ).payload(symbol=symbol, scenarios=whatif_service.presets_payload())
+
+    try:
+        context = attach_scorecard(build_context(symbol))
+    except Exception:
+        logger.exception("what-if: context build failed for %s", symbol)
+        return availability.dependency_unavailable(
+            "The data needed to simulate this could not be loaded.",
+            reason="CONTEXT_FAILED",
+        ).payload(symbol=symbol)
+
+    if context.scorecard is None:
+        return availability.insufficient(
+            "This security could not be scored, so there is no baseline to simulate against.",
+            reason="NO_BASELINE",
+        ).payload(symbol=symbol)
+
+    result = whatif_service.simulate(
+        context, lever=chosen["lever"], change=chosen["change"], label=chosen["label"],
+    )
+    if result is None:
+        return availability.error(
+            "The simulation did not complete.", reason="SIMULATION_FAILED",
+        ).payload(symbol=symbol)
+
+    return availability.available(symbol=symbol, scenario=chosen["key"], **result.model_dump())
+
+
+@app.get("/api/what-if/scenarios", tags=["agents"])
+def what_if_scenarios():
+    """The scenarios the interface offers, with their magnitudes.
+
+    The magnitude is part of the label because a simulation whose size is
+    invisible cannot be interpreted: "momentum weakens" says nothing without
+    "by 20%".
+    """
+    from src.services import whatif_service
+
+    return {"simulation": True, "scenarios": whatif_service.presets_payload()}
+
+
+@app.get("/api/ask/suggestions", tags=["agents"])
+def ask_suggestions():
+    """The questions the interface offers.
+
+    Each is answerable from one run's evidence, which is the test for whether
+    it belongs here — a free-text box invites questions this product cannot
+    ground, and an ungrounded answer is the thing it exists to avoid.
+    """
+    from src.services.ask_service import SUGGESTED
+
+    return {"suggestions": list(SUGGESTED)}
+
+
+def _nothing_gathered(model_signal: Any, agent_statuses: list[Any]) -> bool:
+    """True when a run produced no decision and no specialist finished cleanly.
+
+    Every agent unavailable, or able to report only what it lacked ("the macro regime
+    could not be measured" is a claim, and counts as one), and no scorecard to copy a
+    signal from: that is a run in which no provider answered, whatever else it
+    recorded. A run with any clean specialist, or with a signal, is not this.
+    """
+    if model_signal is not None:
+        return False
+    return not any(getattr(status, "value", status) == "ok" for status in agent_statuses)
+
+
+@app.get("/api/analysis-runs/{ticker}", tags=["agents"])
+def analysis_run(ticker: str):
+    """One graph execution, with its trace.
+
+    This is the Agent Observatory's data: which node ran, what it cost, what
+    each specialist produced, what reconciliation found, what validation
+    concluded, and which branch the critic took. Every field comes from a real
+    run — there is no synthetic pipeline state anywhere in this response.
+
+    The decision travels with the trace and is not produced by it. Exactly one
+    node writes `model_signal`, and it copies the scorecard.
+    """
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+
+    from src.agents import graph
+
+    try:
+        state = graph.run(symbol)
+    except Exception:
+        logger.exception("analysis graph failed for %s", symbol)
+        return availability.dependency_unavailable(
+            "The analysis pipeline could not be run for this security.",
+            reason="GRAPH_FAILED",
+        ).payload(symbol=symbol)
+
+    agents = state.get("agent_results", {}) or {}
+    validation = state.get("validation")
+
+    if "langgraph: unavailable" in state.get("errors", []):
+        return availability.dependency_unavailable(
+            "The analysis graph dependency is unavailable; no analysis was run.",
+            reason="LANGGRAPH_UNAVAILABLE",
+        ).payload(
+            symbol=symbol,
+            run_id=state.get("run_id"),
+            graph_version=state.get("graph_version"),
+            agent_schema_version=state.get("agent_schema_version"),
+        )
+
+    if not agents and state.get("model_signal") is None:
+        return availability.empty(
+            "No provider returned evidence for this security, so no analysis "
+            "run could be assembled.",
+            reason="NO_EVIDENCE",
+        ).payload(symbol=symbol, run_id=state.get("run_id"))
+
+    if _nothing_gathered(state.get("model_signal"), [r.status for r in agents.values()]):
+        # The graph ran, and the trace says so, but nothing real came out of it. Reporting
+        # that as AVAILABLE would tell the reader a run exists to be inspected.
+        return availability.dependency_unavailable(
+            "No provider answered, so this run produced no decision. Each specialist "
+            "reported only what it was missing.",
+            reason="NO_PROVIDER_ANSWERED",
+        ).payload(
+            symbol=symbol,
+            run_id=state.get("run_id"),
+            requested_at=state.get("requested_at"),
+            agents=[
+                {"agent": r.agent, "status": r.status.value, "missing": r.missing}
+                for r in agents.values()
+            ],
+            errors=state.get("errors", []),
+            graph_version=state.get("graph_version"),
+            agent_schema_version=state.get("agent_schema_version"),
+        )
+
+    return availability.available(
+        symbol=symbol,
+        run_id=state.get("run_id"),
+        requested_at=state.get("requested_at"),
+        # Authoritative, copied from the scorecard by one node.
+        model_signal=state.get("model_signal"),
+        confidence=state.get("confidence"),
+        risk_score=state.get("risk_score"),
+        data_completeness=state.get("data_completeness"),
+        # The trace.
+        nodes=[
+            {"node": node, "latency_ms": ms}
+            for node, ms in state.get("timings", {}).items()
+        ],
+        agents=[
+            {
+                "agent": result.agent,
+                "status": result.status.value,
+                "claims": len(result.claims),
+                "evidence": len(result.evidence),
+                "missing": result.missing,
+                "warnings": result.warnings,
+                "latency_ms": result.latency_ms,
+            }
+            for result in agents.values()
+        ],
+        reconciliation=(
+            state["reconciliation"].model_dump()
+            if hasattr(state.get("reconciliation"), "model_dump")
+            else state.get("reconciliation")
+        ),
+        validation=validation.model_dump() if validation is not None else None,
+        explanation=state.get("explanation"),
+        narrative_source=state.get("narrative_source"),
+        critic=state.get("critic"),
+        warnings=state.get("warnings", []),
+        errors=state.get("errors", []),
+        fallbacks=state.get("fallbacks", []),
+        graph_version=state.get("graph_version"),
+        agent_schema_version=state.get("agent_schema_version"),
+        validation_version=state.get("validation_version"),
+        scoring_version=state.get("scoring_version"),
+    )
+
+
+@app.get("/api/agents/{ticker}/validation", tags=["agents"])
+def agent_validation(ticker: str):
+    """The evidence behind one security, and whether it holds up.
+
+    Returns the claims each specialist agent made, the evidence handles
+    supporting them, and the deterministic validator's verdict on each. This
+    is the traceability surface: every sentence the product shows about a
+    security should reduce to rows in here.
+
+    The decision travels with it and is not produced by it. `model_signal` is
+    copied from the scorecard; no agent and no validator writes it.
+    """
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+
+    from src.agents import analyse
+
+    try:
+        result = analyse(symbol)
+    except Exception:
+        logger.exception("agent pipeline failed for %s", symbol)
+        raise HTTPException(
+            status_code=503,
+            detail="The evidence pipeline could not be run for this security.",
+        ) from None
+
+    nothing_real = _nothing_gathered(result.model_signal, [a.status for a in result.agents])
+    if (not result.claims and not result.evidence) or nothing_real:
+        # Nothing was gathered at all, or only statements of what could not be gathered.
+        # Reported as unavailable rather than as an empty but successful analysis.
+        return {
+            "symbol": symbol,
+            "status": "unavailable",
+            "detail": (
+                "No provider returned evidence for this security."
+                if not result.claims and not result.evidence else
+                "No provider answered, so there is no decision to audit. Each specialist "
+                "reported only what it was missing."
+            ),
+            "agents": [a.model_dump() for a in result.agents],
+            "generated_at": result.generated_at,
+            "agent_schema_version": result.agent_schema_version,
+        }
+
+    return {
+        "symbol": symbol,
+        "status": "ok",
+        "model_signal": result.model_signal,
+        "confidence": result.confidence,
+        "risk_score": result.risk_score,
+        "data_completeness": result.data_completeness,
+        "validation": result.validation.model_dump(),
+        "agents": [a.model_dump() for a in result.agents],
+        "claims": [c.model_dump() for c in result.claims],
+        "evidence": [e.model_dump() for e in result.evidence],
+        "generated_at": result.generated_at,
+        "agent_schema_version": result.agent_schema_version,
+        "scoring_version": result.scoring_version,
+    }
+
+
+# ── explore ──────────────────────────────────────────────────────────────────
+# Public, like /api/research and /api/screen beside them. These endpoints read
+# the same scorecard the research surface already serves anonymously, so
+# gating them would not protect anything — it would only make the landing
+# experience require an account to see work the product gives away by design.
+# USE_EXPLORE exists for drawing navigation; the security boundary is on the
+# routes that mutate or expose operational state.
+
+@app.get("/api/compare/rank", tags=["explore"])
+def compare_rank(a: str = Query(..., min_length=1, max_length=10),
+                 b: str = Query(..., min_length=1, max_length=10)):
+    """Why one security ranks above another, decomposed exactly.
+
+    `overall_rank` is a weighted sum of four terms, so the gap between two
+    securities splits into four contributions that add back up to it. No model
+    is consulted: the response restates a subtraction the ranking already
+    performed, ordered by which term did the most work.
+
+    A generated explanation here would be worse than none. Asked why one name
+    ranks above another, a model produces fluent reasons — business quality,
+    market position — that the ranking has never looked at, and the reader
+    comes away believing it considered them.
+    """
+    symbol_a, symbol_b = a.upper().strip(), b.upper().strip()
+    for symbol in (symbol_a, symbol_b):
+        if not symbol.replace(".", "").replace("-", "").isalnum():
+            raise HTTPException(status_code=422, detail="Invalid ticker")
+    if symbol_a == symbol_b:
+        return availability.unsupported(
+            "A security cannot be compared with itself.", reason="SAME_SYMBOL",
+        ).payload(a=symbol_a, b=symbol_b)
+
+    try:
+        snapshot = explore_service.get_snapshot()
+    except Exception:
+        logger.exception("rank attribution: snapshot unavailable")
+        return availability.dependency_unavailable(
+            "Rankings are being rebuilt, so there is no ordering to explain.",
+            reason="SNAPSHOT_UNAVAILABLE",
+        ).payload(a=symbol_a, b=symbol_b)
+
+    by_symbol = {r.symbol: r for r in snapshot.rows}
+    absent = [s for s in (symbol_a, symbol_b) if s not in by_symbol]
+    if absent:
+        return availability.insufficient(
+            f"{' and '.join(absent)} {'is' if len(absent) == 1 else 'are'} not in the "
+            "ranked universe, so there is no ordering to explain.",
+            reason="NOT_IN_UNIVERSE",
+        ).payload(a=symbol_a, b=symbol_b, missing=absent)
+
+    from src.services import rank_attribution
+
+    result = rank_attribution.attribute(by_symbol[symbol_a], by_symbol[symbol_b])
+    return availability.available(
+        summary=rank_attribution.summary(result),
+        universe_version=snapshot.universe_version,
+        data_as_of=snapshot.data_as_of,
+        generated_at=snapshot.generated_at,
+        stale=snapshot.stale,
+        **result.model_dump(),
+    )
+
+
+@app.get("/api/explore/categories", tags=["explore"])
+def explore_categories():
+    """The ranking dimensions this deployment supports, and what each means."""
+    return {"categories": explore_service.categories_payload()}
+
+
+@app.get("/api/explore", tags=["explore"])
+def explore(
+    category: str = Query("overall"),
+    sector: Optional[str] = Query(None),
+    signal: Optional[str] = Query(None),
+    max_risk: Optional[int] = Query(None, ge=0, le=100),
+    min_confidence: Optional[int] = Query(None, ge=0, le=100),
+    min_data_completeness: Optional[float] = Query(None, ge=0.0, le=1.0),
+    min_price: Optional[float] = Query(None, ge=0.0),
+    max_price: Optional[float] = Query(None, ge=0.0),
+    limit: int = Query(25, ge=1, le=200),
+):
+    """Cross-sectional rankings over the configured universe.
+
+    422 on an unknown category rather than quietly serving "overall": asking
+    for one ordering and receiving another is worse than being refused, and
+    the reader has no way to tell it happened.
+    """
+    try:
+        snapshot = explore_service.get_snapshot()
+    except Exception:
+        logger.exception("explore snapshot unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="Rankings are being rebuilt and no previous snapshot is available.",
+        ) from None
+
+    filters = explore_service.ExploreFilters(
+        sector=sector, model_signal=signal, max_risk=max_risk,
+        min_confidence=min_confidence, min_data_completeness=min_data_completeness,
+        min_price=min_price, max_price=max_price,
+    )
+    try:
+        rows = explore_service.rank(snapshot, category, filters, limit)
+    except KeyError:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown category {category!r}. Expected one of: "
+                f"{', '.join(c['key'] for c in explore_service.categories_payload())}."
+            ),
+        ) from None
+
+    return {
+        "category": category,
+        "results": [r.model_dump() for r in rows],
+        "count": len(rows),
+        "eligible_count": snapshot.eligible_count,
+        "evaluated_count": snapshot.evaluated_count,
+        "generated_at": snapshot.generated_at,
+        "data_as_of": snapshot.data_as_of,
+        "universe_version": snapshot.universe_version,
+        "scoring_version": snapshot.scoring_version,
+        "stale": snapshot.stale,
+        "stale_reason": snapshot.stale_reason,
+    }
+
+
+@app.get("/api/recommendations", tags=["explore"])
+def recommendations(limit: int = Query(5, ge=1, le=20)):
+    """Top Ranked Ideas — the overall ordering, computed, never listed.
+
+    No symbol is named in this path. The universe decides which securities may
+    be considered; the model decides which of them rank highest, and if every
+    one of them fails eligibility this returns nothing rather than relaxing a
+    gate to fill the slots.
+    """
+    try:
+        snapshot = explore_service.get_snapshot()
+    except Exception:
+        logger.exception("recommendations unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="Rankings are being rebuilt and no previous snapshot is available.",
+        ) from None
+
+    rows = explore_service.recommendations(snapshot, limit)
+    leaders = explore_service.performance_leaders(snapshot, limit)
+    return {
+        "results": [r.model_dump() for r in rows],
+        # Kept under a name of its own as well as `results`, because these are
+        # different questions. Top ranked asks what the model thinks now;
+        # performance asks how a security has actually done, adjusted for what
+        # it put a holder through. They disagree often and the product is more
+        # honest for showing both rather than implying one follows the other.
+        "top_ranked": [r.model_dump() for r in rows],
+        "performance_leaders": [r.model_dump() for r in leaders],
+        # Often empty, and that is the tier working rather than failing. A
+        # conviction list that always has entries is a ranking wearing a
+        # threshold's name.
+        "high_conviction": [
+            r.model_dump() for r in explore_service.high_conviction(snapshot, limit)
+        ],
+        # The near misses, so an empty conviction tier can say how close
+        # anything came instead of only that it is empty.
+        "near_conviction": [
+            r.model_dump() for r in explore_service.near_conviction(snapshot, limit)
+        ],
+        # One name per sector — the highest-ranked eligible security in each,
+        # ordered by that rank. A reading of the same ordering, not a new one.
+        "across_sectors": [
+            r.model_dump() for r in explore_service.across_sectors(snapshot, 10)
+        ],
+        "conviction_policy_version": conviction.CONVICTION_POLICY_VERSION,
+        "count": len(rows),
+        "eligible_count": snapshot.eligible_count,
+        "evaluated_count": snapshot.evaluated_count,
+        "generated_at": snapshot.generated_at,
+        "data_as_of": snapshot.data_as_of,
+        "universe_version": snapshot.universe_version,
+        "scoring_version": snapshot.scoring_version,
+        "stale": snapshot.stale,
+        "stale_reason": snapshot.stale_reason,
+        "disclaimer": (
+            "An educational quantitative ranking, not personalised investment advice."
+        ),
+    }
+
+
+@app.get("/api/dashboard")
+def get_dashboard():
+    """Market intelligence dashboard: macro board, breadth, sectors, events."""
+    from src.services import dashboard_service
+
+    return dashboard_service.get_dashboard()
+
+
+@app.get("/api/memo/{ticker}")
+def get_memo(ticker: str):
+    """
+    Full analyst memo: runs the research pipeline, collects + ranks cited
+    evidence, and generates a citation-audited investment memo. Heavier than
+    /api/research (evidence search + larger LLM call); cached 15 minutes.
+    """
+    from src.services import memo_service
+
+    ticker = ticker.upper().strip()
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+
+    research = research_ticker(ticker, fast=False)
+    memo = memo_service.generate_memo(research)
+    return {"memo": memo, "research": research}
+
+
+# ── quant research ──────────────────────────────────────────────────────────
+#
+# Read-only over `experiments/`. Nothing here trains, backtests or ingests: a
+# page load must not be able to start a walk-forward. Every endpoint reports
+# `unavailable` with a remedy when the artifact is missing, rather than
+# computing a cheap substitute a reader could not distinguish from the real one.
+
+
+@app.get("/api/quant/status", tags=["quant"])
+def quant_status():
+    """What the product is allowed to serve, and whether the holdout is locked.
+
+    `deployment_status` reads the model registry, not any leaderboard, so a
+    spectacular research result cannot make this say anything other than
+    NO_MODEL until a model is actually promoted. This is the endpoint the UI
+    uses to decide whether it may show a prediction at all.
+    """
+    from src.services import quant_service
+
+    return {
+        **quant_service.production_status(),
+        "firewall": quant_service.firewall_status(),
+    }
+
+
+@app.get("/api/quant/model-lab", tags=["quant"])
+def quant_model_lab():
+    """Declared model universe plus every published trial, including failures."""
+    from src.services import quant_service
+
+    return quant_service.model_lab()
+
+
+@app.get("/api/quant/experiments", tags=["quant"])
+def quant_experiments():
+    """Every experiment on disk, newest first, with invalidated ones marked VOID.
+
+    Void studies are listed rather than deleted: removing one would erase the
+    multiple-testing exposure it created, which the significance correction on
+    every later study depends on.
+    """
+    from src.services import quant_service
+
+    return quant_service.experiments()
+
+
+@app.get("/api/quant/research-history", tags=["quant"])
+def quant_research_history():
+    """Every study, including negative and not-yet-run ones. Nothing here is promoted."""
+    from src.services import research_history
+
+    return research_history.research_history()
+
+
+@app.get("/api/quant/experiments/{experiment_id}", tags=["quant"])
+def quant_experiment(
+    experiment_id: str = FastPath(..., max_length=32, pattern=r"^[A-Za-z0-9_-]+$"),
+):
+    """One experiment in full: leaderboard, verdicts, ablation, controls, regimes.
+
+    Every leaderboard row carries a `verdict` computed from the same gate
+    constants `ModelRegistry.promote()` enforces, so a card and a promotion
+    refusal can never disagree.
+    """
+    from src.services import quant_service
+
+    payload = quant_service.experiment(experiment_id)
+    if payload.get("status") == "unavailable":
+        raise HTTPException(status_code=404, detail=payload["detail"])
+    return payload
+
+
+@app.get("/api/quant/latest", tags=["quant"])
+def quant_latest():
+    """The newest completed, non-void experiment. What /quant renders by default."""
+    from src.services import quant_service
+
+    return quant_service.latest()
+
+
+@app.get("/api/quant/search/{experiment_id}", tags=["quant"])
+def quant_search(experiment_id: str):
+    """State of a staged search — RUNNING, COMPLETE or NOT STARTED.
+
+    While a search is running this serves the append-only checkpoint, and every
+    field is labelled PARTIAL. A leaderboard from a search still in flight is
+    progress, not a result, and the multiple-testing threshold is computed at
+    the DECLARED budget rather than the count reached so far — otherwise the bar
+    would rise under the reader all night and a mid-run configuration could
+    appear to clear a threshold it will never actually face.
+    """
+    from src.services import quant_search_service
+
+    return quant_search_service.search(experiment_id)
+
+
+@app.get("/api/quant/selection/{experiment_id}", tags=["quant"])
+def quant_selection(experiment_id: str):
+    """The gate verdict for a completed search, if selection has been run.
+
+    Separate endpoint from the search on purpose: a search produces
+    configurations, and the verdict comes from a distinct step that applies the
+    predeclared gates. Serving them from one endpoint would invite the UI to
+    treat the top of a leaderboard as a candidate, which is exactly the mistake
+    the gates exist to prevent.
+    """
+    from src.services import quant_search_service
+
+    return quant_search_service.selection(experiment_id)
+
+
+@app.get("/api/quant/preflight", tags=["quant"])
+def quant_preflight():
+    """The integrity gates that stand between the research and the holdout.
+
+    Read-only and fast. It fits no model, reads no holdout-dated row, and cannot
+    spend the holdout — the only path that can is an explicit human run of
+    `python -m src.quant.study.holdout --run` under the contract.
+
+    The two-build contamination probe is skipped because it rebuilds the panel
+    twice; `valid_for_run` is therefore always false from this surface, and the
+    response says which check was omitted and why.
+    """
+    from src.services import quant_preflight_service
+
+    return quant_preflight_service.preflight()
+
+
+@app.get("/api/quant/features", tags=["quant"])
+def quant_features():
+    """The feature registry: definition, source, lookback, direction, leakage note.
+
+    An unregistered feature cannot enter an experiment, so this is the complete
+    set of inputs any result could have used.
+    """
+    from src.services import ml_service
+
+    return ml_service.feature_catalog()
+
+
+@app.get("/api/quant/covariance", tags=["quant"])
+def quant_covariance():
+    """Every named covariance estimator on the research book's own panel.
+
+    The choice of estimator changes every risk number a book reports, and a
+    single matrix shown alone hides that dependence. The pairwise default is
+    included because it is the one that can fail to be positive semi-definite;
+    seeing it beside three that cannot is the point of the surface.
+
+    Nothing here changes the default. It compares.
+    """
+    from src.services import covariance_service, quant_portfolio_service
+
+    panel, reason = quant_portfolio_service.panel_and_weights_detailed()
+    if panel is None:
+        # Six distinct situations used to arrive here as one sentence — "no
+        # research book is available" — which tells a reader nothing about
+        # whether to wait, configure something, or report a bug.
+        states = {
+            "NO_BOOK": availability.empty(
+                "No research book could be built on this deployment, so there is "
+                "nothing to estimate a covariance from. The predictions artifact "
+                "the book is derived from is large and regenerable, so it stays "
+                "with the research run rather than shipping with the service.",
+                reason="NO_BOOK",
+            ),
+            "NO_POSITIONS": availability.empty(
+                "The research book built, but holds no positions.",
+                reason="NO_POSITIONS",
+            ),
+            "NO_PANEL": availability.empty(
+                "No return panel was stored for this experiment, so there is no "
+                "history to estimate a covariance over.",
+                reason="NO_PANEL",
+            ),
+            "INSUFFICIENT_HISTORY": availability.insufficient(
+                "The return panel is empty, so no covariance can be estimated.",
+                reason="INSUFFICIENT_HISTORY",
+            ),
+            "INSUFFICIENT_POSITIONS": availability.insufficient(
+                "Too few of the book's names have overlapping return history. "
+                "Below this a sample covariance is badly conditioned, and the "
+                "estimators would differ for arithmetic reasons rather than "
+                "financial ones.",
+                reason="INSUFFICIENT_POSITIONS",
+                minimum_names=quant_portfolio_service.MIN_COVARIANCE_NAMES,
+            ),
+        }
+        state = states.get(reason or "", availability.empty(
+            "No research book is available to estimate a covariance from.",
+            reason=reason or "UNAVAILABLE",
+        ))
+        return state.payload(estimators=[])
+
+    returns, weights = panel
+    try:
+        payload = covariance_service.compare(returns, weights)
+        payload["correlation"] = covariance_service.correlation_view(returns)
+    except Exception:
+        # This route used to answer 500 with a stack trace. A matrix that will
+        # not decompose is a fact about the data, not a server fault, and
+        # either way the exception is ours to log rather than the reader's to
+        # read.
+        logger.exception("covariance estimation failed")
+        return availability.insufficient(
+            "The covariance matrix could not be estimated from this book's "
+            "returns. This usually means the panel is near-singular — too few "
+            "independent observations for the number of names.",
+            reason="SINGULAR_MATRIX",
+            names=int(returns.shape[1]), observations=int(returns.shape[0]),
+        ).payload(estimators=[])
+
+    payload["status"] = availability.State.AVAILABLE.value
+    return payload
+
+
+@app.get("/api/quant/methodology", tags=["quant"])
+def quant_methodology():
+    """Every reported measure, with its unit, annualisation and failure conditions.
+
+    Units, annualisation, inputs and applicability are read from the risk
+    engine's own methodology table rather than restated here, so the handbook
+    cannot drift from the code that produces the numbers. A handbook that has
+    drifted is worse than none: it is a confident claim about how a number was
+    computed that is no longer true.
+    """
+    from src.services import methodology_service
+
+    return methodology_service.handbook()
+
+
+@app.get("/api/quant/datasets", tags=["quant"])
+def quant_datasets():
+    """The dataset catalog in three tiers: admissible, gated, excluded.
+
+    `gated` is the tier that matters most and the easiest to omit: a source
+    keyed by fiscal period is admissible only behind a publication gate, and
+    reporting only `excluded` would imply everything else is unconditionally
+    safe to read as-dated.
+    """
+    from src.services import ml_service
+
+    return ml_service.dataset_catalog()
+
+
+@app.get("/api/quant/symbol/{symbol}", tags=["quant"])
+def quant_symbol(symbol: str = FastPath(..., max_length=10, pattern=r"^[A-Za-z.\-]+$")):
+    """The company-page quant panel.
+
+    Returns NO_MODEL and an explicit disclosure unless a production-approved
+    model exists. It never fabricates a prediction and never renders a research
+    signal in a shape that could be mistaken for a production one.
+    """
+    from src.services import quant_service
+
+    return quant_service.symbol_view(symbol)
+
+
+@app.get("/api/quant/experiments/{experiment_id}/series/{model_id}", tags=["quant"])
+def quant_model_series(
+    experiment_id: str = FastPath(..., max_length=32, pattern=r"^[A-Za-z0-9_-]+$"),
+    model_id: str = FastPath(..., max_length=64, pattern=r"^[a-z0-9_]+$"),
+    target: str = "fwd_rank_21",
+):
+    """Per-fold IC and the cumulative rank-spread path for one model.
+
+    Derived in Python from the predictions artifact, never in the frontend: a
+    rank IC recomputed in TypeScript would be a second implementation of a
+    scientific calculation, and the first time the two disagreed the page would
+    be quietly wrong.
+
+    The spread curve is **not** a P&L. `fwd_rank_21` is a cross-sectional rank,
+    so the accumulation is additive and its units are rank points. Every Sharpe
+    and return figure on the page comes from the artifact's costed backtest.
+    """
+    from src.services import quant_series
+
+    if not target.replace("_", "").isalnum():
+        raise HTTPException(status_code=422, detail="invalid target")
+
+    folds = quant_series.fold_series(experiment_id, model_id, target=target)
+    if folds.get("status") != "ok":
+        # A 404 here was wrong twice over. It told a client the route was
+        # missing when the route is fine, and it collapsed three different
+        # situations into one code: an experiment nobody ran, a model this
+        # experiment did not include, and — the common one — a deployment
+        # that never received the predictions artifact, which is gitignored
+        # because it is large and regenerable from the recorded seed.
+        #
+        # The reader needs to know which. "No series was stored for this
+        # experiment" is actionable; "Request failed: 404" is not.
+        detail = str(folds.get("detail", ""))
+        if "no predictions artifact" in detail:
+            state = availability.empty(
+                "No prediction series was stored for this experiment on this "
+                "deployment. The artifact is large and regenerable, so it stays "
+                "with the research run rather than shipping with the service.",
+                reason="NO_ARTIFACT",
+                experiment_id=experiment_id, target=target,
+            )
+        elif "no predictions for" in detail:
+            state = availability.empty(
+                f"{experiment_id} has a prediction series, but none for "
+                f"{model_id!r}. That model was not part of this experiment.",
+                reason="NO_SERIES",
+                experiment_id=experiment_id, model_id=model_id,
+            )
+        else:
+            state = availability.insufficient(
+                "The prediction series for this model could not be summarised.",
+                reason="INSUFFICIENT_SERIES",
+                experiment_id=experiment_id, model_id=model_id,
+            )
+        return state.payload(
+            experiment_id=experiment_id, model_id=model_id, target=target,
+        )
+
+    return {
+        "status": availability.State.AVAILABLE.value,
+        "experiment_id": experiment_id,
+        "model_id": model_id,
+        "target": target,
+        "folds": folds,
+        "spread_curve": quant_series.spread_curve(experiment_id, model_id, target=target),
+    }
+
+
+@app.get("/api/quant/registry", tags=["quant"])
+def quant_registry():
+    """The model registry: counts, per-entry status, and why each one is there.
+
+    Promotion is decided in Python. This endpoint reports that decision and the
+    unmet thresholds behind it, so a reader can check the reasoning rather than
+    take the status on trust.
+    """
+    from src.services import quant_service
+
+    return quant_service.registry_view()
+
+
+# ── quant inference (Render model service) ──────────────────────────────────
+#
+# A thin, optional edge onto the deployed EXP-006 model. Every endpoint below
+# degrades to a structured `unavailable` rather than raising: the research
+# surface is the product, and the model is an annotation on it. No page depends
+# on the inference service being up.
+
+
+@app.get("/api/quant/inference/status", tags=["quant"])
+def quant_inference_status():
+    """Whether the deployed model is reachable, and what it is.
+
+    Returns `unavailable` with a reason when the service is unset, cold-starting
+    or down — never an error, because the caller's job is to render the rest of
+    the page regardless.
+    """
+    from src.services import inference_client
+
+    return {
+        "configured": inference_client.configured(),
+        "health": inference_client.health(),
+        "model": inference_client.model_card(),
+    }
+
+
+@app.get("/api/quant/inference/predict/{symbol}", tags=["quant"])
+def quant_inference_predict(
+    symbol: str = FastPath(..., max_length=10, pattern=r"^[A-Za-z.\-]+$"),
+):
+    """A research prediction for one symbol, with its provenance attached.
+
+    The prediction is a **cross-sectional rank**, not a return and not a
+    recommendation, and it is computed from a frozen feature snapshot whose
+    as-of date travels in the response. The model is EXPERIMENTAL and
+    promotion-BLOCKED; that status is carried through from the artifact and
+    cannot be altered here.
+    """
+    from src.services import inference_client
+
+    return inference_client.predict([symbol])
+
+
+# ── quant portfolio construction + risk ─────────────────────────────────────
+#
+# Arithmetic on committed artifacts: no dataset, no inference service, no
+# research metric recomputed. An allocation shown here illustrates how the
+# signal would be held; it is never evidence that holding it is a good idea.
+
+
+@app.get("/api/quant/portfolio/methods", tags=["quant"])
+def quant_portfolio_methods():
+    """Available allocators and what each one assumes."""
+    from src.services import quant_portfolio_service
+
+    return quant_portfolio_service.methods()
+
+
+@app.get("/api/quant/portfolio", tags=["quant"])
+def quant_portfolio(
+    experiment_id: str = "EXP-006",
+    model_id: str = "gradient_boosting",
+    method: str = "risk_parity",
+    long_only: bool = False,
+    max_weight: float = 0.05,
+):
+    """Build a book from the latest predictions and measure its risk and cost.
+
+    Returns weights, per-name risk contributions, concentration, exposure,
+    turnover and the gross → commission → spread → slippage → net waterfall.
+
+    Units are the target's: `fwd_rank_21` is a cross-sectional rank, so nothing
+    here is a P&L. The evidential Sharpe figures live in the experiment's costed
+    backtest, not in this view.
+    """
+    from src.quant.portfolio.optimizer import METHODS
+    from src.services import quant_portfolio_service
+
+    if method not in METHODS:
+        raise HTTPException(status_code=422, detail=f"unknown method; known: {list(METHODS)}")
+    if not 0 < max_weight <= 1:
+        raise HTTPException(status_code=422, detail="max_weight must be in (0, 1]")
+    if not experiment_id.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(status_code=422, detail="invalid experiment id")
+    if not model_id.replace("_", "").isalnum():
+        raise HTTPException(status_code=422, detail="invalid model id")
+
+    return quant_portfolio_service.build(
+        experiment_id, model_id, method=method,
+        long_only=long_only, max_weight=max_weight,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Paper trading — Alpaca, paper endpoint only
+#
+# Every route here reports what the broker said. None of them computes a fill,
+# an average price, a P&L or an order state, because a number this product
+# shows about an account has to be a number the broker reported or it is a
+# number this product made up about someone's money.
+#
+# The credential never crosses this boundary. `status` is deliberately shaped
+# so that the browser learns whether trading is possible and, if not, a
+# sentence explaining why — and nothing else.
+# ═══════════════════════════════════════════════════════════════════════════
+
+class PaperOrderRequest(BaseModel):
+    symbol: str = Field(default="", max_length=12)
+    side: str = Field(default="", max_length=8)
+    qty: Optional[float] = None
+    notional: Optional[float] = None
+    order_type: str = Field(default="market", max_length=12)
+    time_in_force: str = Field(default="day", max_length=8)
+    limit_price: Optional[float] = None
+    #: The reference chosen at preview and sent with the confirmation, so a
+    #: resend of the same confirmation can never become a second order.
+    client_order_id: Optional[str] = Field(default=None, max_length=128)
+    origin: Optional[str] = Field(default=None, max_length=12)
+
+
+def _safe_float_api(value: Any) -> Optional[float]:
+    """A vendor string to a float, or None. Never a zero substitute — a
+    buying power this product could not parse is unknown, not nil."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out == out else None
+
+
+def _validate_paper_order(req: "PaperOrderRequest") -> list[str]:
+    """Everything wrong with this order, in words a reader can act on.
+
+    Returns every problem rather than the first, because a ticket that
+    reports one error at a time is a ticket someone submits four times.
+    The rules live in `src/services/paper_trading.validate`.
+    """
+    from src.services import paper_trading
+
+    return paper_trading.validate(paper_trading.normalize(req))
+
+
+@app.get("/api/paper/status")
+def paper_status():
+    """Whether paper trading is usable. Safe to render; carries no credential."""
+    from src.broker.alpaca_paper import PAPER_HOST, status as broker_status
+
+    s = broker_status()
+    # Two independent conditions, reported separately because they fail for
+    # different reasons and have different fixes: the deployment may have no
+    # broker credential, or it may have one and no authorised operator.
+    access = paper_access_state()
+    return {
+        "configured": s.configured,
+        "reason": s.reason,
+        "environment": s.environment,
+        # Shown so a reader can see which endpoint their orders would reach.
+        # It is a public hostname, not a secret.
+        "endpoint": PAPER_HOST,
+        # Whether anyone may trade here at all. The owner ids are deliberately
+        # not returned — they are account identifiers, and a client has no use
+        # for someone else's.
+        "access": access,
+        "tradable": bool(s.configured and access["enabled"]),
+    }
+
+
+@app.get("/api/paper/access")
+def paper_access(_trader: str = Depends(require_paper_trader)):
+    """Authenticate and authorize the caller without touching Alpaca.
+
+    The Paper workspace calls this once before its account/positions/orders
+    fan-out. A signed-out or non-owner session therefore produces one coherent
+    access state rather than three duplicate failures. Owner ids and broker
+    credentials never enter the response.
+    """
+    return {"authenticated": True, "authorized": True, "environment": "paper"}
+
+
+def _paper_client():
+    from src.broker.alpaca_paper import AlpacaPaper, BrokerMisconfigured
+    try:
+        return AlpacaPaper()
+    except BrokerMisconfigured as e:
+        # 503, not 500: the service is fine, this deployment has not been
+        # given a paper account. The interface renders it as UNAVAILABLE.
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+def _broker_call(fn):
+    from src.broker.alpaca_paper import BrokerUnavailable
+    try:
+        return fn()
+    except BrokerUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.get("/api/paper/account")
+def paper_account(_trader: str = Depends(require_paper_trader)):
+    client = _paper_client()
+    account = _broker_call(client.account)
+    return {"account": account, "source": "alpaca paper", "environment": "paper"}
+
+
+@app.get("/api/paper/positions")
+def paper_positions(_trader: str = Depends(require_paper_trader)):
+    client = _paper_client()
+    return {
+        "positions": _broker_call(client.positions),
+        "source": "alpaca paper",
+        "environment": "paper",
+    }
+
+
+@app.get("/api/paper/orders")
+def paper_orders(
+    status_filter: str = Query("all", alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+    _trader: str = Depends(require_paper_trader),
+):
+    client = _paper_client()
+    if status_filter not in {"open", "closed", "all"}:
+        raise HTTPException(status_code=422, detail="status must be open, closed or all")
+    return {
+        "orders": _broker_call(lambda: client.orders(status_filter, limit)),
+        "source": "alpaca paper",
+        "environment": "paper",
+    }
+
+
+@app.post("/api/paper/orders/preview")
+def paper_order_preview(req: PaperOrderRequest, _trader: str = Depends(require_paper_trader)):
+    """Validate an order and price it, without placing anything.
+
+    The step between intending to trade and trading: is the order well formed,
+    is the asset tradable here, what would it cost against buying power, how
+    old is the price behind that estimate, and is the market open. It returns
+    the client order id the confirmation must carry. It places nothing.
+    """
+    from src.services import paper_trading
+
+    client = _paper_client()
+    return _broker_call(lambda: paper_trading.preview(
+        client, paper_trading.normalize(req), providers.market_data.get_price,
+    ))
+
+
+def _paper_orders_repo():
+    from src.services import database
+    from src.services.database.repositories import PaperOrdersRepository
+
+    db = database.get_client()
+    return PaperOrdersRepository(db) if db is not None else None
+
+
+@app.post("/api/paper/orders")
+def paper_submit_order(req: PaperOrderRequest, response: Response, trader: str = Depends(require_paper_trader)):
+    """Place a paper order once, and return the broker's own reply.
+
+    Validated again here rather than trusting the preview: a preview is a
+    separate request and nothing guarantees the body reaching this route is
+    the body that was previewed. Idempotent on `client_order_id`: a repeated
+    confirmation returns the order the first one created, and a timeout is
+    resolved by looking the order up, never by sending it again.
+    """
+    from src.services import paper_trading
+
+    client = _paper_client()
+    status_code, body = _broker_call(lambda: paper_trading.submit(
+        client, paper_trading.normalize(req), trader, _paper_orders_repo(),
+    ))
+    if status_code >= 400:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    response.status_code = status_code
+    return {**body, "source": "alpaca paper", "environment": "paper"}
+
+
+@app.get("/api/paper/orders/by-client/{client_order_id}")
+def paper_reconcile_order(client_order_id: str, _trader: str = Depends(require_paper_trader)):
+    """What the broker says about a submission, by the reference sent with it."""
+    from src.services import paper_trading
+
+    if not paper_trading.CLIENT_ORDER_ID.match(client_order_id):
+        raise HTTPException(status_code=422, detail="invalid order reference")
+    client = _paper_client()
+    return _broker_call(lambda: paper_trading.reconcile(client, client_order_id, _paper_orders_repo()))
+
+
+@app.post("/api/paper/reconcile")
+def paper_reconcile_unresolved(_trader: str = Depends(require_paper_trader)):
+    """Resolve submissions whose outcome a timeout, reload or restart left open."""
+    from src.services import paper_trading
+
+    repo = _paper_orders_repo()
+    if repo is None:
+        return {"reconciled": [], "detail": "No local order references are kept on this deployment."}
+    client = _paper_client()
+    return {"reconciled": _broker_call(lambda: paper_trading.reconcile_unresolved(client, repo))}
+
+
+@app.get("/api/paper/orders/{order_id}")
+def paper_order_detail(order_id: str, _trader: str = Depends(require_paper_trader)):
+    client = _paper_client()
+    return {"order": _broker_call(lambda: client.order(order_id)), "source": "alpaca paper", "environment": "paper"}
+
+
+@app.delete("/api/paper/orders/{order_id}")
+def paper_cancel_order(order_id: str, _trader: str = Depends(require_paper_trader)):
+    """Ask the broker to cancel, then report what it says the order is now."""
+    from src.services import paper_trading
+
+    client = _paper_client()
+    if not order_id or len(order_id) > 64:
+        raise HTTPException(status_code=422, detail="invalid order id")
+    status_code, body = _broker_call(lambda: paper_trading.cancel(client, order_id))
+    if status_code >= 400:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return {**body, "environment": "paper"}
+
+
+@app.get("/api/paper/history")
+def paper_history(
+    period: str = Query("1M", max_length=4), timeframe: str = Query("1D", max_length=6),
+    _trader: str = Depends(require_paper_trader),
+):
+    """The broker's portfolio history: equity and P/L per window, as reported."""
+    from src.services import paper_trading
+
+    problems = paper_trading.history_params(period, timeframe)
+    if problems:
+        raise HTTPException(status_code=422, detail="; ".join(problems))
+    client = _paper_client()
+    raw = _broker_call(lambda: client.portfolio_history(period, timeframe))
+    return {
+        "points": paper_trading.history_points(raw or {}),
+        "base_value": _safe_float_api((raw or {}).get("base_value")),
+        "timeframe": (raw or {}).get("timeframe"), "period": period,
+        "source": "alpaca paper", "environment": "paper",
+    }
+
+
+@app.get("/api/paper/clock")
+def paper_clock(_trader: str = Depends(require_paper_trader)):
+    client = _paper_client()
+    return {"clock": _broker_call(client.clock), "source": "alpaca paper", "environment": "paper"}
+
+
+@app.get("/api/paper/connection")
+def paper_connection(_trader: str = Depends(require_paper_trader)):
+    """Test the paper connection with a real account read. Carries no credential."""
+    from src.broker.alpaca_paper import AlpacaPaper
+    from src.services import paper_trading
+
+    return {**paper_trading.connection(AlpacaPaper), "environment": "paper"}
+
+
+@app.get("/api/paper/analytics")
+def paper_analytics(_trader: str = Depends(require_paper_trader)):
+    """Account figures from broker data, with derived values labelled as such."""
+    from src.services import paper_trading
+
+    client = _paper_client()
+    account = _broker_call(client.account)
+    positions = _broker_call(client.positions)
+    orders = _broker_call(lambda: client.orders("all", 200))
+    return {**paper_trading.analytics(account or {}, positions or [], orders or []),
+            "source": "alpaca paper", "environment": "paper"}
+
+
+@app.get("/api/options/{ticker}")
+def get_options(ticker: str, expiration: Optional[str] = Query(None)):
+    """The option chain for one underlying, or an honest account of why not.
+
+    Options are supported by exactly one provider in this stack. When that
+    provider has no credential the response says so specifically — "no
+    provider is configured for options" — rather than returning an empty chain,
+    which a reader would reasonably interpret as "this security has no listed
+    options". Those are different claims and only one of them is ours to make.
+    """
+    symbol = ticker.upper().strip()
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+    if expiration and not _looks_like_date(expiration):
+        raise HTTPException(status_code=422, detail="expiration must be YYYY-MM-DD")
+
+    configured = providers.market_data.massive.available
+    result = providers.market_data.get_option_chain(symbol, expiration)
+
+    if result.ok and result.data:
+        chain = result.data
+        return {
+            "ticker": symbol,
+            "contracts": [c.model_dump() for c in chain.contracts],
+            "expirations": chain.expirations,
+            "strikes": chain.strikes,
+            "source": chain.source,
+            "delayed": chain.delayed,
+            "stale": result.stale,
+            "as_of": chain.as_of,
+            "status": ("stale" if result.stale else "delayed" if chain.delayed is True
+                       else "live" if chain.delayed is False and chain.as_of else "unknown"),
+        }
+
+    return {
+        "ticker": symbol,
+        "contracts": [],
+        "expirations": [],
+        "strikes": [],
+        "source": None,
+        "status": "unavailable",
+        # The distinction the provider matrix insists on: unconfigured is not
+        # the same as asked-and-refused, and neither means "no options exist".
+        "reason": (
+            "The options provider did not return a chain for this security."
+            if configured else
+            "No provider is configured for options data in this deployment."
+        ),
+        "provider_configured": configured,
+    }
+
+
+def _looks_like_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except (TypeError, ValueError):
+        return False
