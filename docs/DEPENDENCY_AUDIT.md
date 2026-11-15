@@ -11,9 +11,10 @@ deliberately left alone and why. Re-run it before a release; the commands are at
 
 | Package | Finding | Reachable here? | Action |
 |---|---|---|---|
-| `next` 16.3.8 | Unauthenticated RCE in the image-optimisation API when SVG files are used; RCE in `use cache` functions returning typed arrays; DoS in the App Router through Server Actions (all fixed by 16.4.5) | The `/_next/image` endpoint is served whether or not `next/image` is used, so the first is treated as reachable | Upgraded to **16.4.5** (with `eslint-config-next` 16.4.5) |
+| `next` 16.3.8 | Unauthenticated RCE in the image-optimisation API when SVG files are used; RCE in `use cache` functions returning typed arrays; DoS in the App Router through Server Actions (all fixed by 16.4.5) | The `/_next/image` endpoint is served whether or not `next/image` is used, so the first is treated as reachable | Upgraded to **16.4.5**. `eslint-config-next` stays at 16.1.6, and `eslint-plugin-react-hooks` is pinned at 7.0.1 as a direct dev dependency: the install floated it to 7.1.1, whose `set-state-in-effect` rule fails seven existing components, which would need a refactor of their own |
 | `zod` < 4.6.6, through `@vercel/oidc` 3.x → `@vercel/cli-config` | Memory exhaustion validating oversized constrained collections | Development token refresh only | Upgraded `@vercel/oidc` to **4.0.7**. Its one breaking change (it re-reads `VERCEL_OIDC_TOKEN_FILE` on each call) does not affect `lib/backend-proxy.ts`, which calls `getVercelOidcToken()` with no options |
 | `follow-redirects` 1.16.0–1.16.1, through `razorpay` → `axios` | Credential headers can survive a cross-origin redirect | Server-side payment calls to Razorpay | `npm audit fix` to 1.16.2 (in range) |
+| `fast-xml-parser` ≤ 5.11.2 (low; reported 2026-11-15) | Quadratic CPU scanning unterminated stop-node tags | Yes: it parses third-party news feeds | `npm audit fix` to 5.12.1 (in range) |
 
 `npm audit --omit=dev` now reports **0 vulnerabilities**.
 
