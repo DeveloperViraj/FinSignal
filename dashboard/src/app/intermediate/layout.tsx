@@ -1,0 +1,22 @@
+import NonceClerkProvider from '@/components/auth/NonceClerkProvider'
+import type { Metadata } from 'next'
+
+import { EntitlementProvider } from '@/components/system/Entitlement'
+
+export const metadata: Metadata = {
+  title: { default: 'Intermediate', template: '%s · FinSignal' },
+  description: 'Equity signals with factor, risk, evidence and agent detail.',
+  robots: { index: false, follow: false },
+}
+
+export const dynamic = 'force-dynamic'
+
+export default function IntermediateLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <NonceClerkProvider>
+      <div style={{ minHeight: '100vh', background: 'var(--p-base)', color: 'var(--ink)' }}>
+        <EntitlementProvider>{children}</EntitlementProvider>
+      </div>
+    </NonceClerkProvider>
+  )
+}

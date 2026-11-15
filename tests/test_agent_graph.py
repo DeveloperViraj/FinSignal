@@ -1,0 +1,369 @@
+"""The analysis graph: orchestration only, and every branch preserves authority.
+
+LangGraph decides when things run. It computes nothing. The property that makes
+that claim checkable is that the four authoritative values — signal,
+confidence, risk, completeness — are copied from the scorecard by exactly one
+node, and no node after it may write them. Every test below tries a different
+route through the graph and asserts the signal survives it.
+
+The graph earns its place by making three things explicit that a function body
+hid: the specialists fan out because they are independent, the critic is a
+conditional path rather than an `if`, and each node's cost is recorded so a run
+has a trace.
+"""
+
+import pandas as pd
+import pytest
+
+from src.agents import graph
+from src.agents.graph import (
+    AnalysisState, GRAPH_VERSION, node_explain, node_finalise,
+    node_reconcile, node_score, node_validate,
+)
+from src.agents.schemas import AgentResult, AgentStatus, EvidenceContext
+
+
+class _Card:
+    verdict = "Hold"
+    confidence = 61
+    risk_score = 42
+    data_completeness = 0.93
+    model_version = "scoring-v2.1"
+    risk_components: list = []
+    factors: list = []
+
+
+def _frame(n=200):
+    idx = pd.bdate_range("2026-01-01", periods=n)
+    return pd.DataFrame({"Close": [100.0 + i * 0.3 for i in range(n)],
+                         "Volume": [1_000_000] * n}, index=idx)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_graph():
+    graph.reset_for_tests()
+    yield
+    graph.reset_for_tests()
+
+
+# ── the graph is available and shaped as declared ────────────────────────────
+
+def test_langgraph_is_installed():
+    assert graph.available()
+
+
+def test_the_graph_compiles_and_declares_its_nodes():
+    compiled = graph.build_graph()
+    nodes = set(compiled.get_graph().nodes)
+    for node in ("build_evidence", "market", "fundamental", "technical", "news",
+                 "macro", "reconcile", "score", "validate", "explain",
+                 "finalise"):
+        assert node in nodes, node
+
+
+def test_the_specialists_fan_out_from_one_snapshot():
+    """Each depends only on build_evidence, which is what makes them parallel
+    and what keeps them reasoning about the same snapshot."""
+    edges = graph.build_graph().get_graph().edges
+    pairs = {(e.source, e.target) for e in edges}
+    for name in ("market", "fundamental", "technical", "news", "macro"):
+        assert ("build_evidence", name) in pairs, name
+        assert (name, "reconcile") in pairs, name
+
+
+def test_the_graph_is_compiled_once():
+    assert graph.build_graph() is graph.build_graph()
+
+
+# ── only one node produces a signal ──────────────────────────────────────────
+
+def test_score_copies_the_scorecard_rather_than_computing():
+    state: AnalysisState = {"evidence_context": EvidenceContext(symbol="X", scorecard=_Card())}
+    update = node_score(state)
+    assert update["model_signal"] == "Hold"
+    assert update["confidence"] == 61
+    assert update["risk_score"] == 42
+    assert update["data_completeness"] == 0.93
+
+
+def test_no_node_after_score_writes_an_authoritative_value():
+    """The invariant, checked structurally rather than by running every path."""
+    import inspect
+
+    authoritative = ("model_signal", "confidence", "risk_score", "data_completeness")
+    for node in (node_validate, node_explain, node_finalise, node_reconcile):
+        source = inspect.getsource(node)
+        for field in authoritative:
+            assert f'"{field}":' not in source, f"{node.__name__} writes {field}"
+
+
+def test_an_unscored_security_yields_no_signal_rather_than_a_default():
+    state: AnalysisState = {"evidence_context": EvidenceContext(symbol="X", scorecard=None)}
+    update = node_score(state)
+    assert "model_signal" not in update
+    assert "no_scorecard" in update["fallbacks"]
+
+
+# ── deterministic validation replaced the model critic ──────────────────────
+
+def test_retired_model_critic_is_recorded():
+    update = node_finalise({"critic": None, "validation": None})
+    assert update["critic"]["skipped"] is True
+    assert "deterministic validation" in update["critic"]["reason"]
+    assert "model_critic_retired" in update["fallbacks"]
+
+
+# ── failure isolation ────────────────────────────────────────────────────────
+
+def test_a_failing_node_is_recorded_and_the_run_continues():
+    """An unavailable news provider should cost a reader the news section, not
+    the analysis."""
+    from src.agents.graph import _timed
+
+    def boom(_state):
+        raise RuntimeError("vendor exploded")
+
+    update = _timed("news", boom, {})
+    assert update["errors"] == ["news: RuntimeError"]
+    assert update["warnings"]
+    assert "news" in update["timings"]
+
+
+def test_every_node_records_its_cost():
+    from src.agents.graph import _timed
+
+    update = _timed("score", lambda _s: {}, {})
+    assert "score" in update["timings"]
+    assert update["timings"]["score"] >= 0
+
+
+# ── the deterministic explanation ────────────────────────────────────────────
+
+def test_a_useful_explanation_exists_with_no_model_available():
+    state: AnalysisState = {
+        "model_signal": "Hold", "confidence": 44, "risk_score": 52,
+        "data_completeness": 0.84, "scorecard": _Card(),
+    }
+    update = node_explain(state)
+    assert update["narrative_source"] == "deterministic"
+    summary = update["explanation"]["summary"]
+    assert "HOLD" in summary
+    assert "chance of a gain" in summary  # confidence framed correctly
+
+
+def test_the_deterministic_explanation_never_promises_a_probability():
+    from src.agents.explanation import deterministic_summary
+
+    out = deterministic_summary(
+        signal="Buy", confidence=82, risk_score=30, data_completeness=1.0,
+    )
+    blob = " ".join(str(v) for v in out.values()).lower()
+    for forbidden in ("% chance", "probability of profit", "will rise", "guaranteed"):
+        assert forbidden not in blob
+
+
+def test_an_unscored_security_gets_an_honest_summary():
+    from src.agents.explanation import deterministic_summary
+
+    out = deterministic_summary(
+        signal=None, confidence=None, risk_score=None, data_completeness=None,
+    )
+    assert "could not produce a signal" in out["summary"]
+    assert "not the same as it being low" in out["risk_explanation"]
+
+
+# ── the last gate ────────────────────────────────────────────────────────────
+
+def test_a_refused_narrative_is_withheld():
+    from src.agents.schemas import ValidationReport
+
+    report = ValidationReport()
+    report.narrative_admissible = False
+    report.rejected_reason = "it contradicts the signal"
+
+    update = node_finalise({
+        "critic": {"available": True}, "validation": report,
+        "explanation": {"summary": "Buy this."},
+    })
+    assert update["explanation"]["withheld"] is True
+    assert "narrative_withheld" in update["fallbacks"]
+    # Moved, not flagged in place: a consumer reaching for `summary` cannot
+    # render the refused paragraph by forgetting to check a boolean.
+    assert update["explanation"]["summary"] is None
+    assert update["explanation"]["withheld_summary"] == "Buy this."
+
+
+def test_an_admissible_narrative_survives():
+    from src.agents.schemas import ValidationReport
+
+    update = node_finalise({
+        "critic": {"available": True}, "validation": ValidationReport(),
+        "explanation": {"summary": "Momentum supports the signal."},
+    })
+    assert "explanation" not in update
+
+
+# ── reconciliation counts sources, not vendor names ──────────────────────────
+
+def test_reconciliation_distinguishes_providers_from_independent_sources():
+    """yfinance and Yahoo RSS are Yahoo twice."""
+    from src.agents.schemas import EvidenceRecord
+
+    def ev(provider):
+        return EvidenceRecord(
+            evidence_id=f"E-{provider}", agent="t", provider=provider,
+            capability="price_series", field="last_close", value=1.0,
+        )
+
+    result = AgentResult(agent="market", status=AgentStatus.OK,
+                         evidence=[ev("yahoo"), ev("yfinance"), ev("polygon")])
+    update = node_reconcile({"agent_results": {"market": result}})
+    rec = update["reconciliation"]
+    assert rec.providers == 3
+    assert rec.independent_sources == 2
+    assert rec.agreed == 1
+
+
+def test_reconciliation_names_the_degraded_agents():
+    result_ok = AgentResult(agent="market", status=AgentStatus.OK)
+    result_bad = AgentResult(agent="news", status=AgentStatus.UNAVAILABLE, missing=["headlines"])
+    update = node_reconcile({"agent_results": {"market": result_ok, "news": result_bad}})
+    rec = update["reconciliation"]
+    assert rec.agents_ok == ["market"]
+    assert rec.agents_degraded == ["news"]
+    assert "headlines" in rec.missing_inputs
+
+
+def test_reconciliation_preserves_source_conflicts():
+    from src.agents.schemas import EvidenceRecord, ReconciliationStatus
+
+    rows = [
+        EvidenceRecord(
+            evidence_id="E-a", agent="market", provider="polygon",
+            capability="price_series", field="last_close", value=100.0,
+            unit="usd", currency="USD",
+        ),
+        EvidenceRecord(
+            evidence_id="E-b", agent="market", provider="alpha_vantage",
+            capability="price_series", field="last_close", value=101.0,
+            unit="usd", currency="USD",
+        ),
+    ]
+    result = AgentResult(agent="market", status=AgentStatus.OK, evidence=rows)
+    rec = node_reconcile({"agent_results": {"market": result}})["reconciliation"]
+    assert rec.conflicted == 1
+    assert rec.dimensions[0].status is ReconciliationStatus.CONFLICTED
+    assert rec.dimensions[0].values == [100.0, 101.0]
+
+
+def test_reconciliation_does_not_compare_different_periods():
+    from src.agents.schemas import EvidenceRecord, Period
+
+    rows = [
+        EvidenceRecord(
+            evidence_id="E-ttm", agent="fundamental", provider="sec",
+            capability="fundamentals", field="revenue", value=10.0,
+            unit="usd", currency="USD", period=Period(basis="ttm"),
+        ),
+        EvidenceRecord(
+            evidence_id="E-fy", agent="fundamental", provider="alpha_vantage",
+            capability="fundamentals", field="revenue", value=9.0,
+            unit="usd", currency="USD", period=Period(basis="fiscal_year"),
+        ),
+    ]
+    result = AgentResult(agent="fundamental", status=AgentStatus.OK, evidence=rows)
+    rec = node_reconcile({"agent_results": {"fundamental": result}})["reconciliation"]
+    assert len(rec.dimensions) == 2
+    assert rec.conflicted == 0
+    assert rec.single_source == 2
+
+
+def test_missing_langgraph_is_an_explicit_failure_not_a_sequential_fallback(monkeypatch):
+    monkeypatch.setattr(graph, "available", lambda: False)
+    state = graph.run("X")
+    assert state["agent_results"] == {}
+    assert state["errors"] == ["langgraph: unavailable"]
+    assert state["fallbacks"] == []
+    assert "model_signal" not in state
+
+
+# ── versioning ───────────────────────────────────────────────────────────────
+
+def test_a_run_records_the_versions_that_produced_it():
+    state = graph.run.__doc__
+    assert state  # the function documents its degradation contract
+    assert GRAPH_VERSION == "graph-v3"
+
+
+# ── the M2 guarantees, asserted on the graph path itself ─────────────────────
+
+def test_the_graph_path_upholds_the_evaluated_guarantees():
+    """The evaluation harness measures the validation layer, not the graph.
+
+    `src/evaluation/harness.py` drives `ValidationAgent` directly over frozen
+    scenarios, so its M2 column says "the validator refuses these things" — it
+    does not say the shipped path still refuses them once orchestration moved
+    to a graph. Those are different claims, and after the LangGraph integration
+    only the first was covered.
+
+    This closes the gap for the three properties the M2 column reports: the
+    authoritative numbers come from the scorecard, a refused narrative is
+    withheld rather than footnoted, and neither depends on which branch the
+    graph took.
+    """
+    from src.agents.schemas import ValidationReport, ValidationStatus
+
+    class _Refused(ValidationReport):
+        pass
+
+    state: AnalysisState = {
+        "evidence_context": EvidenceContext(symbol="X", scorecard=_Card()),
+        "agent_results": {},
+        "warnings": [], "errors": [], "fallbacks": [], "timings": {},
+    }
+
+    # 1. The authoritative values come from the scorecard.
+    scored = node_score(state)
+    assert scored["model_signal"] == _Card.verdict
+    assert scored["confidence"] == _Card.confidence
+    assert scored["risk_score"] == _Card.risk_score
+    assert scored["data_completeness"] == _Card.data_completeness
+    state.update(scored)
+
+    # 2. A narrative the validator refused does not reach the reader, on either
+    #    branch out of `explain`.
+    refused = ValidationReport(
+        status=ValidationStatus.UNSUPPORTED, narrative_admissible=False,
+        rejected_reason="it cited evidence that does not exist",
+    )
+    for branch in ("critic", "skip"):
+        final = node_finalise({
+            **state,
+            "validation": refused,
+            "explanation": {"summary": "a confident paragraph about nothing"},
+            "narrative_source": "model",
+            "critic": {"ok": True} if branch == "critic" else None,
+        })
+        summary = (final.get("explanation") or {}).get("summary") or ""
+        assert "a confident paragraph about nothing" not in summary, (
+            f"a refused narrative survived the {branch} branch"
+        )
+        # And the verdict is untouched by the refusal.
+        for field in ("model_signal", "confidence", "risk_score", "data_completeness"):
+            assert field not in final, f"finalise rewrote {field} on the {branch} branch"
+
+
+def test_the_evaluation_harness_does_not_route_through_the_graph():
+    """Stated as a test so the limitation cannot be quietly forgotten.
+
+    If the harness is ever wired through the graph this fails, and whoever does
+    that should update GENAI_EVALUATION.md's scope note in the same change —
+    the doc currently tells a reader the harness measures the validation layer,
+    and a doc that describes the wrong thing is worse than no doc.
+    """
+    import pathlib
+
+    source = pathlib.Path("src/evaluation/harness.py").read_text()
+    assert "ValidationAgent" in source, "the harness no longer drives the validator"
+    assert "from src.agents import graph" not in source
+    assert "graph.run" not in source

@@ -1,0 +1,178 @@
+"""Every endpoint is exposed in the UI, or declared internal on purpose.
+
+The redesign began from a measurement: of 43 endpoints, eleven were called by
+no component. They were not stubs — among them were the feature registry, the
+dataset contracts and the model registry, which is to say the evidence for the
+product's central claim was being computed and thrown away.
+
+That was found by hand once. This test makes it impossible to reintroduce
+silently: an endpoint added without a caller and without a deliberate entry in
+INTERNAL fails here.
+
+INTERNAL is not a way to quiet the test. Each entry names why the endpoint has
+no user-facing surface, and an entry that stops being true is a lie this file
+will keep telling, so they are kept short and checkable.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+API = ROOT / "api" / "index.py"
+FRONTEND = ROOT / "dashboard" / "src"
+
+#: Endpoints with no UI surface, and the reason each one has none.
+INTERNAL: dict[str, str] = {
+    "/api/health": "liveness probe for the platform, not for a person",
+    "/api/metrics": "latency percentiles scraped by the host, not read in the product",
+    "/api/metrics/reset": (
+        "an authenticated operator action, not a workspace feature — it used to "
+        "be `GET /api/metrics?reset=true`, where any crawler or reload could "
+        "erase the observability window for everyone"
+    ),
+    "/api/graph/expand": "called by the graph explorer through a query builder, not by path",
+    "/api/graph/path": "same",
+    "/api/quant/features": "an alias of /api/ml/features; the UI calls the ml route",
+    "/api/quant/datasets": "an alias of /api/ml/datasets; the UI calls the ml route",
+    "/api/quant/registry": (
+        "a strict subset of /api/ml/registry, which the gate matrix renders; its "
+        "one unique field, the promotion note, is stated on the Gates workspace"
+    ),
+    "/api/ml/capabilities": "mirrors /api/providers/capabilities for the ML layer; the registry is surfaced",
+    "/api/providers/capabilities": (
+        "the capability matrix the providers page used to join in the browser; the "
+        "page now reads it, joined with health and the catalog, from "
+        "/api/providers/registry, and this stays for API clients"
+    ),
+    "/api/providers/health": (
+        "the per-capability health snapshot the status bar used to sum; the bar "
+        "now reads /api/providers/registry with the providers page, so both count "
+        "the same adapters, and this stays for API clients"
+    ),
+    "/api/research/providers/health": "duplicate of /api/providers/health",
+    "/api/internal/alerts/evaluate": (
+        "the alert scheduler's entry point: it authenticates with "
+        "X-Scheduler-Token, not a user, and the web proxy refuses /api/internal/ "
+        "before any upstream call, so no page can or should call it"
+    ),
+    "/api/factors/universes": "populates a control inside the factor workspace, not a page",
+    "/api/company/{ticker}/media": "called from the security workspace by composed path",
+    "/api/memo/{ticker}": "server-generated analyst prose; the notebook is deliberately author-written instead, so this stays unwired",
+    "/api/knowledge/{ticker}": "read through lib/knowledge, which composes the path",
+    "/api/screen": "read through lib/intelligence/providers, which composes the path",
+    "/api/quotes": "read through lib/watchlists, which composes the path",
+}
+
+ENDPOINT = re.compile(r'@app\.(?:get|post)\("([^"]+)"')
+
+
+def _endpoints() -> list[str]:
+    return sorted(set(ENDPOINT.findall(API.read_text())))
+
+
+def _frontend_text() -> str:
+    parts = []
+    for path in FRONTEND.rglob("*"):
+        if path.suffix in {".ts", ".tsx"} and path.is_file():
+            parts.append(path.read_text())
+    return "\n".join(parts)
+
+
+def _is_referenced(endpoint: str, haystack: str) -> bool:
+    """A path is referenced if its literal prefix appears anywhere in the UI.
+
+    Templated segments are stripped: the UI builds those by interpolation, so
+    the constant prefix is the only part that can appear literally.
+
+    This is deliberately generous. It cannot distinguish a direct call from a
+    sibling path sharing a prefix, so it can say an endpoint is reachable when
+    only its neighbour is. That direction is the safe one: the test exists to
+    catch endpoints with NO surface, and a false "reachable" is caught by
+    reading, while a false "orphan" would train people to ignore the failure.
+    """
+    prefix = endpoint.split("{")[0].rstrip("/")
+    return prefix in haystack
+
+
+def test_the_api_surface_is_not_empty() -> None:
+    """Guards the parser: a regex that matches nothing would pass everything."""
+    assert len(_endpoints()) > 30
+
+
+def test_every_endpoint_is_exposed_or_declared_internal() -> None:
+    haystack = _frontend_text()
+    orphans = [
+        e for e in _endpoints()
+        if e not in INTERNAL and not _is_referenced(e, haystack)
+    ]
+    assert orphans == [], (
+        "endpoints with no UI surface and no INTERNAL entry:\n  "
+        + "\n  ".join(orphans)
+        + "\n\nEither surface them in a workspace or record why they have no surface."
+    )
+
+
+def test_internal_entries_describe_real_endpoints() -> None:
+    """A reason attached to a route that no longer exists is stale documentation."""
+    known = set(_endpoints())
+    stale = sorted(set(INTERNAL) - known)
+    assert stale == [], f"INTERNAL names endpoints that do not exist: {stale}"
+
+
+def test_internal_entries_carry_a_reason() -> None:
+    empty = sorted(k for k, v in INTERNAL.items() if not v.strip())
+    assert empty == [], f"INTERNAL entries without a reason: {empty}"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/ml/features",
+        "/api/ml/datasets",
+        "/api/ml/registry",
+        "/api/quant/methodology",
+        "/api/quant/experiments",
+        "/api/quant/selection/{experiment_id}",
+        "/api/quant/portfolio",
+        "/api/quant/status",
+        "/api/quant/model-lab",
+        "/api/ml/provenance/{label}/{model_id}",
+        # The capability matrix is surfaced through the registry, which carries
+        # it alongside health; /api/providers/capabilities is declared above.
+        "/api/providers/registry",
+        "/api/quant/covariance",
+        "/api/quant/latest",
+        "/api/dashboard",
+        "/api/graph/workspace",
+        "/api/backtest/{ticker}",
+    ],
+)
+def test_the_endpoints_the_redesign_surfaced_stay_surfaced(endpoint: str) -> None:
+    """These were orphans. A regression that re-orphans one fails here by name."""
+    assert _is_referenced(endpoint, _frontend_text()), f"{endpoint} lost its UI surface"
+
+
+def test_internal_routes_are_unreachable_from_the_website() -> None:
+    """An /api/internal/ entry is a claim about access, so it is checked as one.
+
+    It must be declared, never referenced by a page, refused by the web proxy,
+    and refused by the backend itself without its scheduler secret.
+    """
+    internal = [e for e in _endpoints() if e.startswith("/api/internal/")]
+    assert internal, "the scheduler route moved; update this check"
+    haystack = _frontend_text()
+    proxy = (FRONTEND / "lib" / "backend-proxy.ts").read_text()
+    assert "=== 'internal'" in proxy, "the web proxy no longer refuses /api/internal/"
+    for e in internal:
+        assert e in INTERNAL
+        assert e not in haystack, f"{e} is referenced by the website"
+    from fastapi.testclient import TestClient
+
+    import api.index as api_module
+    client = TestClient(api_module.app)
+    for e in internal:
+        assert client.post(e).status_code in {403, 503}, f"{e} answered without its secret"

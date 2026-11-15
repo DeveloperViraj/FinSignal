@@ -29,6 +29,8 @@
  * The unit label carries the interpretation instead.
  */
 
+import { typographicMinus } from './format'
+
 export type Kind =
   | 'ic'            // rank correlation in [-1, 1]
   | 'correlation'   // Pearson or Spearman in [-1, 1]
@@ -165,7 +167,13 @@ export function format(
   }
 
   if (kind === 'count' || kind === 'rank' || kind === 'sessions') {
-    return { text: Math.round(value).toLocaleString('en-US'), unit, tone, absent: false }
+    // A count is whole unless the caller asks for places: a fractional share
+    // quantity (3.5 shares) rounded to 4 is a position the account does not hold.
+    const places = kind === 'count' && overrides?.digits ? overrides.digits : 0
+    return {
+      text: typographicMinus(places ? value.toLocaleString('en-US', { maximumFractionDigits: places }) : Math.round(value).toLocaleString('en-US')),
+      unit, tone, absent: false,
+    }
   }
 
   if (kind === 'currency') {
@@ -181,12 +189,12 @@ export function format(
         size >= 1e9 ? [1e9, 'B'] :
         [1e6, 'M']
       return {
-        text: `${(value / scale).toFixed(2)}${suffix}`,
+        text: typographicMinus(`${(value / scale).toFixed(2)}${suffix}`),
         unit, tone, absent: false,
       }
     }
     return {
-      text: value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+      text: typographicMinus(value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })),
       unit, tone, absent: false,
     }
   }
@@ -194,11 +202,11 @@ export function format(
   const magnitude = Math.abs(value)
   if (spec.exponentialBelow !== undefined && magnitude > 0 && magnitude < spec.exponentialBelow) {
     const text = value.toExponential(Math.max(1, digits - 1))
-    return { text: withSign(text, value, signed), unit, tone, absent: false }
+    return { text: typographicMinus(withSign(text, value, signed)), unit, tone, absent: false }
   }
 
   const fixed = value.toFixed(digits)
-  return { text: withSign(fixed, value, signed), unit, tone, absent: false }
+  return { text: typographicMinus(withSign(fixed, value, signed)), unit, tone, absent: false }
 }
 
 /**
@@ -211,8 +219,11 @@ export function format(
  * would be the only thing on screen suggesting which side of nothing it fell.
  */
 function withSign(text: string, value: number, signed: boolean): string {
+  // A negative value that rounds to zero lost its direction at this
+  // precision; "-0.00" would claim one, whether or not the kind is signed.
+  if (/^-0(\.0*)?$/.test(text)) return text.slice(1)
   if (!signed || value < 0) return text
-  if (value === 0 || /^-?0(\.0*)?$/.test(text)) return text.replace(/^-/, '')
+  if (value === 0 || /^0(\.0*)?$/.test(text)) return text
   return `+${text}`
 }
 
@@ -226,6 +237,21 @@ export function formatDate(v: string | null | undefined): string {
 export function formatTimestamp(v: string | null | undefined): string {
   if (!v) return '—'
   return v.slice(0, 19).replace('T', ' ')
+}
+
+/** The calendar date of an ISO timestamp, or an em dash where the text is not one. */
+export function formatDay(v: string | null | undefined): string {
+  return v && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : '—'
+}
+
+/** An instant as "Oct 7, 14:30 UTC": the same zone as every other timestamp here, and named. */
+export function formatMoment(v: string | null | undefined): string {
+  const t = v ? Date.parse(v) : Number.NaN
+  if (!Number.isFinite(t)) return '—'
+  const when = new Date(t).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC',
+  })
+  return `${when} UTC`
 }
 
 /**

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
  * The one way a page introduces itself.
  *
  * Before this, every route invented its own header. Three of them repeated
- * the identical `style={{ fontSize: '1rem', marginBottom: 6 }}` override
+ * the identical `style={{ fontSize: 'var(--t-base)', marginBottom: 6 }}` override
  * verbatim, which is the tell that the token was wrong rather than the usage
  * — and several pages opened at `<h2>`, so they shipped with no `<h1>` at
  * all. A screen reader announcing a document outline that starts at level
@@ -24,7 +24,12 @@ export default function PageHeader({
   lede,
   actions,
   meta,
+  nested = false,
 }: {
+  /** Rendered inside a Workbench, which already shows the page title as the
+   *  document's h1. The title then stays for assistive technology only;
+   *  repeating it on screen gave pages two headings for one view. */
+  nested?: boolean
   /** Small label above the title — the section a page belongs to. */
   eyebrow?: string
   title: string
@@ -36,10 +41,12 @@ export default function PageHeader({
   meta?: ReactNode
 }) {
   return (
-    <header className="page-head">
+    <header className="page-head" data-nested={nested ? '' : undefined}>
       <div className="page-head__text">
-        {eyebrow && <span className="page-head__eyebrow">{eyebrow}</span>}
-        <h1 className="page-head__title">{title}</h1>
+        {eyebrow && !nested && <span className="page-head__eyebrow">{eyebrow}</span>}
+        {nested
+          ? <h2 className="visually-hidden">{title}</h2>
+          : <h1 className="page-head__title">{title}</h1>}
         {lede && <p className="page-head__lede">{lede}</p>}
         {meta && <div className="page-head__meta">{meta}</div>}
       </div>

@@ -1,0 +1,381 @@
+'use client'
+
+import { fmtSigned } from '@/lib/format'
+import { Badge, type Tone } from '@/components/system'
+import type { Analysis, RiskLevel } from '@/lib/types'
+
+const RISK_BADGE: Record<RiskLevel, Tone> = {
+  LOW: 'pass',
+  MEDIUM: 'warn',
+  HIGH: 'fail',
+}
+
+const DOT_COLOR = { pos: 'var(--e-pos)', neg: 'var(--e-neg)', neutral: 'var(--e-warn)' } as const
+
+function FactorList({
+  title,
+  items,
+  tone,
+}: {
+  title: string
+  items: string[]
+  tone: 'pos' | 'neg' | 'neutral'
+}) {
+  if (items.length === 0) return null
+  return (
+    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+      <p className="sys-label" style={{ marginBottom: 8 }}>
+        {title}
+      </p>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map((item) => (
+          <li key={item} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-body)', lineHeight: 1.55, color: 'var(--ink-muted)' }}>
+            <span
+              aria-hidden="true"
+              style={{
+                flexShrink: 0,
+                marginTop: 8,
+                width: 6,
+                height: 6,
+                borderRadius: 1,
+                background: DOT_COLOR[tone],
+              }}
+            />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function CaseColumn({ title, text, tone }: { title: string; text: string; tone: 'pos' | 'neg' }) {
+  if (!text) return null
+  return (
+    <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+      <p
+        className="sys-label"
+        style={{ marginBottom: 6, color: tone === 'pos' ? 'var(--e-pos)' : 'var(--e-neg)' }}
+      >
+        {title}
+      </p>
+      <p style={{ fontSize: 'var(--t-body)', lineHeight: 1.6, color: 'var(--ink)' }}>{text}</p>
+    </div>
+  )
+}
+
+/** One row of the Factor attribution appendix: a deterministic subtotal
+ *  (the engine's own arithmetic) beside the model's plain-English read of it. */
+function ImpactRow({
+  label,
+  valueText,
+  tone,
+  narrative,
+}: {
+  label: string
+  valueText: string
+  tone: 'pos' | 'neg' | 'neutral'
+  narrative: string
+}) {
+  if (!narrative) return null
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px 14px',
+        padding: '8px 0',
+        borderBottom: '1px solid var(--rule)',
+        alignItems: 'baseline',
+      }}
+    >
+      <span style={{ width: 108, flexShrink: 0, fontSize: 'var(--t-small)', fontWeight: 600, color: 'var(--ink)' }}>
+        {label}
+      </span>
+      <span
+        className="num"
+        style={{ width: 64, flexShrink: 0, fontSize: 'var(--t-body)', fontWeight: 600, color: DOT_COLOR[tone] }}
+      >
+        {valueText}
+      </span>
+      {/* Wraps under the label/value pair on narrow screens instead of
+          squeezing into a few characters per line. */}
+      <span style={{ flex: '1 1 260px', minWidth: 0, fontSize: 'var(--t-body)', lineHeight: 1.55, color: 'var(--ink-muted)' }}>
+        {narrative}
+      </span>
+    </div>
+  )
+}
+
+function impactTone(value: number): 'pos' | 'neg' | 'neutral' {
+  return value > 0.005 ? 'pos' : value < -0.005 ? 'neg' : 'neutral'
+}
+
+function EvidenceRefs({ analysis, section }: { analysis: Analysis; section: string }) {
+  const refs = analysis.ai?.evidenceLinks[section]
+  if (!Array.isArray(refs) || refs.length === 0 || Array.isArray(refs[0])) return null
+  const evidence = new Map((analysis.ai?.evidence ?? []).map((item) => [item.id, item]))
+  return (
+    <span role="group" aria-label={`Evidence supporting ${section}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+      {(refs as string[]).slice(0, 6).map((id) => {
+        const item = evidence.get(id)
+        const detail = item
+          ? `${item.source} · ${item.field} · ${String(item.value ?? 'unavailable')} · ${item.validation ?? 'unknown'}`
+          : id
+        return (
+          <Badge key={id} literal title={detail}>
+            {item?.source ?? id}
+          </Badge>
+        )
+      })}
+    </span>
+  )
+}
+
+/**
+ * Full research-report explanation layer. Recommendation, confidence, risk
+ * and every factor-impact subtotal are the engine's deterministic values
+ * (attached server-side, see src/services/llm_service.py); the model
+ * contributes only the narrative around them. Falls back to the engine's
+ * own rationale with a clear badge when the LLM is unavailable.
+ *
+ * Layout follows a research-report shape on purpose: verdict rationale →
+ * executive summary → thesis → confidence/risk reasoning → bull/bear case →
+ * catalysts/risks/watch-list are always visible (the "front page"); the
+ * factor-by-factor attribution is collapsed behind a details/summary so a
+ * quick read doesn't turn into a wall of text — expand it for the full
+ * momentum/quality/value/PEAD/macro/news breakdown.
+ */
+export default function AiPanel({ analysis }: { analysis: Analysis }) {
+  const ai = analysis.ai
+  if (!ai) return null
+
+  const impacts = ai.factorImpacts
+  const hasAttribution =
+    ai.topPositiveNarrative ||
+    ai.topNegativeNarrative ||
+    ai.momentumImpact ||
+    ai.qualityImpact ||
+    ai.valueImpact ||
+    ai.peadImpact ||
+    ai.macroReasoning ||
+    ai.newsReasoning
+
+  return (
+    <section aria-label="Research report" className="panel panel--pad">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <h3 className="h-panel">Research report</h3>
+        {ai.generated ? (
+          <Badge tone="info" title={ai.model ?? undefined}>
+            AI-generated
+          </Badge>
+        ) : (
+          <Badge title="The narrative model was unavailable for this run — this text is the engine's own deterministic rationale.">
+            Engine rationale
+          </Badge>
+        )}
+        {ai.generated && ai.provider && (
+          <Badge title={ai.model ?? undefined}>
+            {ai.analystBriefUsed ? 'Groq → ' : ''}{ai.provider}
+          </Badge>
+        )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+            <span className="sys-label">
+              Confidence
+            </span>
+            <span className="num" style={{ fontSize: 'var(--t-body-lg)', fontWeight: 600 }}>
+              {ai.confidence}%
+            </span>
+          </span>
+          <Badge tone={RISK_BADGE[ai.risk]}>{ai.risk.toLowerCase()} risk</Badge>
+        </div>
+      </div>
+
+      {ai.verdictRationale && (
+        <div
+          style={{
+            fontSize: 'var(--t-body)',
+            fontWeight: 600,
+            color: 'var(--ink)',
+            marginBottom: 12,
+            padding: '10px 12px',
+            background: 'var(--p-raised)',
+            border: '1px solid var(--rule)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
+          <p>Why {ai.recommendation}: {ai.verdictRationale}</p>
+          <EvidenceRefs analysis={analysis} section="verdict_rationale" />
+        </div>
+      )}
+
+      {/* Lead paragraph in serif — the report reads like research, not UI chrome. */}
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 'var(--t-lead)',
+          lineHeight: 1.65,
+          color: 'var(--ink)',
+          maxWidth: '68ch',
+          letterSpacing: '0.002em',
+        }}
+      >
+        {ai.executiveSummary}
+      </p>
+      <EvidenceRefs analysis={analysis} section="executive_summary" />
+
+      {ai.investmentThesis && (
+        <div
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 'var(--t-value)',
+            lineHeight: 1.65,
+            color: 'var(--ink)',
+            maxWidth: '68ch',
+            marginTop: 12,
+            paddingLeft: 14,
+            borderLeft: '2px solid var(--accent)',
+          }}
+        >
+          <p>{ai.investmentThesis}</p>
+          <EvidenceRefs analysis={analysis} section="investment_thesis" />
+        </div>
+      )}
+
+      {(ai.confidenceReason || ai.riskReasoning) && (
+        <div className="hairline-top" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 40px', paddingTop: 14, marginTop: 14 }}>
+          {ai.confidenceReason && (
+            <p style={{ fontSize: 'var(--t-body)', lineHeight: 1.6, color: 'var(--ink-muted)', maxWidth: '36ch', flex: '1 1 320px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Why {ai.confidence}%: </span>
+              {ai.confidenceReason}
+            </p>
+          )}
+          {ai.riskReasoning && (
+            <p style={{ fontSize: 'var(--t-body)', lineHeight: 1.6, color: 'var(--ink-muted)', maxWidth: '36ch', flex: '1 1 320px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Why {ai.risk.toLowerCase()} risk: </span>
+              {ai.riskReasoning}
+            </p>
+          )}
+        </div>
+      )}
+
+      {(ai.bullCase || ai.bearCase) && (
+        <div
+          className="hairline-top"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 40px', paddingTop: 16, marginTop: 16 }}
+        >
+          <CaseColumn title="Bull case" text={ai.bullCase} tone="pos" />
+          <CaseColumn title="Bear case" text={ai.bearCase} tone="neg" />
+        </div>
+      )}
+
+      {(ai.keyCatalysts.length > 0 || ai.keyRisks.length > 0 || ai.thingsToWatch.length > 0) && (
+        <div
+          className="hairline-top"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '18px 40px', paddingTop: 16, marginTop: 16 }}
+        >
+          <FactorList title="Key catalysts" items={ai.keyCatalysts} tone="pos" />
+          <FactorList title="Key risks" items={ai.keyRisks} tone="neg" />
+          <FactorList title="Things to watch" items={ai.thingsToWatch} tone="neutral" />
+        </div>
+      )}
+
+      {hasAttribution && (
+        <details className="disclosure" style={{ marginTop: 16 }}>
+          <summary style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--ink-muted)' }}>
+            Factor attribution
+          </summary>
+          <div style={{ marginTop: 10 }}>
+            {(ai.topPositiveNarrative || ai.topNegativeNarrative) && (
+              <p style={{ fontSize: 'var(--t-body)', lineHeight: 1.6, color: 'var(--ink-muted)', marginBottom: 10 }}>
+                {ai.topPositiveNarrative}
+                {ai.topPositiveNarrative && ai.topNegativeNarrative ? ' ' : ''}
+                {ai.topNegativeNarrative}
+              </p>
+            )}
+            <ImpactRow
+              label="Momentum"
+              valueText={fmtSigned(impacts.momentum.contribution)}
+              tone={impactTone(impacts.momentum.contribution)}
+              narrative={ai.momentumImpact}
+            />
+            <ImpactRow
+              label="Quality"
+              valueText={fmtSigned(impacts.quality.contribution)}
+              tone={impactTone(impacts.quality.contribution)}
+              narrative={ai.qualityImpact}
+            />
+            <ImpactRow
+              label="Value"
+              valueText={fmtSigned(impacts.value.contribution)}
+              tone={impactTone(impacts.value.contribution)}
+              narrative={ai.valueImpact}
+            />
+            <ImpactRow
+              label="Post-earnings drift"
+              valueText={fmtSigned(impacts.pead.contribution)}
+              tone={impactTone(impacts.pead.contribution)}
+              narrative={ai.peadImpact}
+            />
+            <ImpactRow
+              label="Macro"
+              valueText={analysis.macro.srm === null
+                ? 'SRM unavailable'
+                : `SRM ${analysis.macro.srm.toFixed(2)}`}
+              tone={analysis.macro.srm === null ? 'neutral'
+                : analysis.macro.srm > 1.15 ? 'neg'
+                  : analysis.macro.srm < 0.9 ? 'pos' : 'neutral'}
+              narrative={ai.macroReasoning}
+            />
+            <ImpactRow
+              label="News"
+              valueText={fmtSigned(impacts.news.contribution)}
+              tone={impactTone(impacts.news.contribution)}
+              narrative={ai.newsReasoning}
+            />
+          </div>
+        </details>
+      )}
+
+      {(ai.investmentHorizon || ai.marketOutlook) && (
+        <dl style={{ margin: '14px 0 0' }}>
+          {ai.investmentHorizon && (
+            <div className="metric-row">
+              <dt>Suggested horizon</dt>
+              <dd style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
+                {ai.investmentHorizon}
+              </dd>
+            </div>
+          )}
+          {ai.marketOutlook && (
+            <div className="metric-row">
+              <dt>Macro outlook</dt>
+              <dd style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
+                {ai.marketOutlook}
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
+
+      {ai.conclusion && (
+        <div className="hairline-top" style={{ paddingTop: 16, marginTop: 16 }}>
+          <p className="sys-label" style={{ marginBottom: 8 }}>Conclusion</p>
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 'var(--t-value)',
+              lineHeight: 1.65,
+              color: 'var(--ink)',
+              maxWidth: '68ch',
+            }}
+          >
+            {ai.conclusion}
+          </p>
+        </div>
+      )}
+    </section>
+  )
+}

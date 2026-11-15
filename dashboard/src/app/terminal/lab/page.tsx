@@ -1,0 +1,56 @@
+import type { Metadata } from 'next'
+
+import Workbench from '@/components/system/Workbench'
+import ModelWorkbench from '@/components/terminal/models2/ModelWorkbench'
+import DeployedModel from '@/components/terminal/models2/DeployedModel'
+import ModelLab from '@/components/terminal/models2/ModelLab'
+import { Panel } from '@/components/system'
+
+export const metadata: Metadata = {
+  title: 'Model Lab',
+  description: 'What each model is, what it learned, and how much of the training fit survived out of sample.',
+}
+
+export default function LabPage() {
+  return (
+    <Workbench
+      title="Model Lab"
+      subtitle="declared search → nested selection → outer evidence"
+      rail={[
+        { label: 'Study', state: 'recorded', detail: 'recorded artifact' },
+      ]}
+      context={
+        <>
+          <Panel title="What this answers">
+            <p style={{ margin: 0, fontSize: 'var(--t-body)', lineHeight: 'var(--lh-body)', color: 'var(--ink-muted)' }}>
+              What a model is and what it learned. Whether it can be trusted is a
+              separate question, answered in Evidence.
+            </p>
+          </Panel>
+          <Panel title="The gap is the headline">
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', lineHeight: 'var(--lh-body)', color: 'var(--ink-muted)' }}>
+              A training IC of 0.19 against a validation IC of 0.03 is not a good
+              model with a caveat. Roughly a sixth of the fit survived; the rest
+              was memorisation, and the validation figure is the model&apos;s real
+              signal.
+            </p>
+          </Panel>
+          <Panel title="Why this is not a ranking">
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', lineHeight: 'var(--lh-body)', color: 'var(--ink-muted)' }}>
+              The best model on a label is the best of the ones tried, which is a
+              statement about the search as much as about the model. The
+              multiple-testing account lives in Signals.
+            </p>
+          </Panel>
+        </>
+      }
+    >
+      <ModelLab />
+      <ModelWorkbench />
+      {/* What is actually deployed, and what it will say if you ask it. Kept
+          on the same page as the training evidence deliberately: a prediction
+          read without the fit that produced it is a number with no provenance. */}
+      <DeployedModel />
+    </Workbench>
+  )
+}

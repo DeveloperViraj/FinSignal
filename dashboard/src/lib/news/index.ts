@@ -6,6 +6,7 @@
    ============================================================ */
 
 import { classify } from './classify'
+import { byNewest } from './order'
 import { parseFeedXml } from './parse'
 import { FEED_SOURCES } from './sources'
 import type { NewsCategory, NewsItem, NewsResponse } from '../types'
@@ -43,7 +44,7 @@ async function fetchFeed(url: string): Promise<string> {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; FinSignalNews/2.0; +https://mini-aladding.vercel.app)',
+      'User-Agent': 'Mozilla/5.0 (compatible; FinSignalNews/2.0; +https://finsignalterminal.vercel.app)',
       Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
     },
     cache: 'no-store',
@@ -89,7 +90,7 @@ async function aggregate(): Promise<Aggregated> {
     }
   })
 
-  items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+  items.sort(byNewest)
 
   return {
     items: items.slice(0, MAX_ITEMS),
