@@ -282,7 +282,9 @@ def capabilities(root: Path | str = DEFAULT_ROOT) -> dict[str, Any]:
     by rendering it.
     """
     root = Path(root)
-    out: dict[str, Any] = {"root": str(root), "capabilities": {}}
+    # Forward slashes on every OS: a payload must not change shape with the
+    # server's platform (Windows would otherwise answer `data\research`).
+    out: dict[str, Any] = {"root": root.as_posix(), "capabilities": {}}
 
     from src.quant.datasets.store import RawStore
     from src.quant.models.linear import SKLEARN_AVAILABLE
