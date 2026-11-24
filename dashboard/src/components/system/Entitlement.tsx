@@ -1,19 +1,18 @@
 'use client'
 
 /**
- * Who the reader is, what they have used today, and how to ask for more.
+ * Who the reader is, for every signed-in workspace.
  *
- * These three facts used to live inside the old terminal shell, which is why
- * the one route that needed them could not move to the workbench: porting the
- * page meant either losing the session gate or duplicating it. Neither is
+ * These facts used to live inside the old terminal shell, which is why the
+ * one route that needed them could not move to the workbench: porting the page
+ * meant either losing the session gate or duplicating it. Neither is
  * acceptable, so the concern is extracted instead.
  *
  * It carries only what genuinely depends on the session:
  *
- *  - the gate that waits for the identity provider to resolve, so a page never
- *    renders a free-tier state to a paying reader for a frame and then flips
+ *  - the gate that waits for the identity provider to resolve, so a research
+ *    run is never sent before its session token exists
  *  - the profile sync that runs once per browser session on first login
- *  - the upgrade dialog, which any workspace can open
  *  - notifications
  *
  * Everything else the old shell carried — header, navigation, keyboard,
@@ -28,27 +27,22 @@
 
 import { useAuth, useUser } from '@clerk/nextjs'
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useState,
+  createContext, useContext, useEffect, useMemo,
   type ReactNode,
 } from 'react'
 
 import Toasts from '@/components/ui/Toasts'
-import UpgradeDialog from '@/components/terminal/UpgradeDialog'
 import { clearAuthSession, configureAuthSession, syncProfile } from '@/lib/persistence'
-import { useTodayCount } from '@/lib/usage'
 
 export interface EntitlementValue {
   /**
-   * False while the identity provider is still resolving. A consumer must not
-   * treat this as "not pro" — unknown and no are different answers, and
-   * rendering the second for the first is how a paying reader gets shown an
-   * upgrade prompt.
+   * False while the identity provider is still resolving. Research waits for
+   * it, because every run is an authenticated request.
+   *
+   * Every feature is open to every signed-in reader: there is no paid tier,
+   * no daily limit and nothing here to upgrade.
    */
   resolved: boolean
-  isPro: boolean
-  /** Analyses run today, from local usage accounting. */
-  usedToday: number
-  requestUpgrade: (reason?: 'limit' | 'feature') => void
 }
 
 const Ctx = createContext<EntitlementValue | null>(null)
@@ -62,11 +56,6 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
     sessionId,
     userId,
   } = useAuth()
-  const usedToday = useTodayCount()
-  const [upgrade, setUpgrade] = useState<{ open: boolean; reason?: 'limit' | 'feature' }>({ open: false })
-
-  const isPro = (user?.publicMetadata?.isPro as boolean) ?? false
-
   // API modules cannot call React hooks. Register Clerk's supported token
   // accessor once it has resolved. authFetch waits for this registration, so
   // a child effect cannot race Clerk. This removes the old dependency on an
@@ -99,24 +88,11 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
     })
   }, [isLoaded, user])
 
-  const requestUpgrade = useCallback(
-    (reason?: 'limit' | 'feature') => setUpgrade({ open: true, reason }),
-    [],
-  )
-
-  const value = useMemo<EntitlementValue>(
-    () => ({ resolved: isLoaded, isPro, usedToday, requestUpgrade }),
-    [isLoaded, isPro, usedToday, requestUpgrade],
-  )
+  const value = useMemo<EntitlementValue>(() => ({ resolved: isLoaded }), [isLoaded])
 
   return (
     <Ctx.Provider value={value}>
       <Toasts />
-      <UpgradeDialog
-        open={upgrade.open}
-        reason={upgrade.reason}
-        onClose={() => setUpgrade({ open: false })}
-      />
       {children}
     </Ctx.Provider>
   )
@@ -129,10 +105,5 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
  * session at all.
  */
 export function useEntitlement(): EntitlementValue {
-  return useContext(Ctx) ?? {
-    resolved: false,
-    isPro: false,
-    usedToday: 0,
-    requestUpgrade: () => {},
-  }
+  return useContext(Ctx) ?? { resolved: false }
 }

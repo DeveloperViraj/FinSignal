@@ -1,5 +1,9 @@
 # Render setup
 
+> **Status (2026-11-24).** Superseded by [FREE_DEPLOYMENT.md](FREE_DEPLOYMENT.md): the backend
+> now runs on Render's free plan as `finsignal-api`, declared in `render.yaml`, which no longer
+> declares the inference service. The environment-name tables below still apply. The history:
+>
 > **Status (2026-10-08).** Production serves from Google Cloud Run
 > (`docs/CLOUD_RUN_DEPLOYMENT.md`). The Render services below are the documented
 > rollback target, and the "primary" in the table means primary *on Render*. The

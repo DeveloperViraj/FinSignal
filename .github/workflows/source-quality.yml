@@ -69,9 +69,6 @@ jobs:
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_c2FtcGxlLmNvbQ$"
           CLERK_SECRET_KEY: "sk_test_build_only"
-          NEXT_PUBLIC_RAZORPAY_KEY_ID: "rzp_test_build_only"
-          RAZORPAY_KEY_ID: "rzp_test_build_only"
-          RAZORPAY_KEY_SECRET: "build_only_not_a_credential"
           BACKEND_ORIGIN: "https://example.invalid"
           BACKEND_AUTH_MODE: "none"
           NEXT_PUBLIC_SITE_URL: "https://example.invalid"

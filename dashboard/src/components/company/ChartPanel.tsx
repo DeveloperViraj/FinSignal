@@ -37,16 +37,11 @@ export function SeriesUnavailable({ series, onRetry }: { series: ChartSeries | n
   )
 }
 
-/**
- * Daily closes for a selectable window. Windows beyond three months are a
- * Pro feature, as the pricing page states.
- */
+/** Daily closes for a selectable window, one month to five years. */
 export default function ChartPanel({
-  symbol, isPro, requestUpgrade, height = 300, title = 'Price',
+  symbol, height = 300, title = 'Price',
 }: {
   symbol: string
-  isPro: boolean
-  requestUpgrade: (reason?: 'limit' | 'feature') => void
   height?: number
   title?: string
 }) {
@@ -72,22 +67,18 @@ export default function ChartPanel({
         </div>
         <div className="sys-panel-head__end">
           <div className="sys-seg" role="group" aria-label="Chart window">
-            {RANGES.map((r) => {
-              const locked = !isPro && r.value !== '3mo'
-              return (
-                <button
-                  key={r.value}
-                  type="button"
-                  className="sys-btn"
-                  aria-pressed={range === r.value}
-                  title={locked ? `${r.label} window — Pro` : `${r.label} window`}
-                  onClick={() => (locked ? requestUpgrade('feature') : setRange(r.value))}
-                >
-                  {r.label}
-                  {locked ? <span className="cw-pro" role="img" aria-label="Pro">·</span> : null}
-                </button>
-              )
-            })}
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                className="sys-btn"
+                aria-pressed={range === r.value}
+                title={`${r.label} window`}
+                onClick={() => setRange(r.value)}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
         </div>
       </header>

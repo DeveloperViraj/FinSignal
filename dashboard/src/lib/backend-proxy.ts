@@ -7,7 +7,7 @@ const TRANSPORT_HEADERS = new Set([
 ])
 const REQUEST_BLOCKED_HEADERS = new Set([
   ...TRANSPORT_HEADERS, 'host', 'content-length',
-  'x-vercel-oidc-token', 'x-serverless-authorization',
+  'x-vercel-oidc-token', 'x-serverless-authorization', 'x-backend-key',
 ])
 const RESPONSE_BLOCKED_HEADERS = new Set([
   ...TRANSPORT_HEADERS, 'content-length',
@@ -17,7 +17,7 @@ const RESPONSE_BLOCKED_HEADERS = new Set([
   // Infrastructure and application credentials are request-only. A broken
   // upstream must never reflect them into the browser response.
   'authorization', 'set-cookie', 'x-vercel-oidc-token',
-  'x-serverless-authorization',
+  'x-serverless-authorization', 'x-backend-key',
 ])
 const MAX_BACKEND_RESPONSE_BYTES = 8 * 1024 * 1024
 // The route's maxDuration is 120 s. Every attempt, and every wait between
@@ -177,6 +177,12 @@ async function forward(request: Request, target: URL, headers: Headers, deadline
     // browser's Authorization header available to Clerk application auth.
     headers.set('X-Serverless-Authorization', `Bearer ${await cloudRunIdToken()}`)
   }
+  // A backend on the open internet (a free Hugging Face Space) answers only
+  // requests carrying its shared key. The browser never sees it: it is set
+  // here, server-side, and a browser-sent copy was dropped with the other
+  // blocked request headers above.
+  const backendKey = process.env.BACKEND_SHARED_KEY?.trim()
+  if (backendKey) headers.set('X-Backend-Key', backendKey)
 
   const method = request.method.toUpperCase()
   const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer()

@@ -8,7 +8,6 @@ import { providerSet, signalTone, verdictWord } from './derive'
 import { StateBlock } from '@/components/system'
 import { ordinal, fmtSigned } from '@/lib/format'
 import { formatMoment } from '@/lib/quantity'
-import { FREE_DAILY_LIMIT } from '@/lib/usage'
 import type { Analysis } from '@/lib/types'
 
 const GRADE_TONE: Record<string, 'pos' | 'info' | 'warn' | 'neg'> = {
@@ -152,10 +151,9 @@ export function SignalGrid({ a }: { a: Analysis }) {
   )
 }
 
-export default function SignalState({ run, onRetry, onUpgrade }: {
+export default function SignalState({ run, onRetry }: {
   run: ResearchRun
   onRetry: () => void
-  onUpgrade: () => void
 }) {
   const a = run.status === 'ready' ? run.analysis : null
   return (
@@ -199,19 +197,6 @@ export default function SignalState({ run, onRetry, onUpgrade }: {
             ))}
           </div>
         </div>
-      ) : null}
-
-      {run.status === 'limited' ? (
-        <StateBlock
-          state="blocked"
-          title="Daily research limit reached"
-          detail={`Free accounts run ${FREE_DAILY_LIMIT} full analyses a day. Price and history above stay live; your Research log keeps every run you have already made.`}
-        >
-          <div className="sig-state__actions">
-            <button type="button" className="sys-btn sys-btn--primary" onClick={onUpgrade}>Upgrade</button>
-            <Link className="sys-btn" href="/terminal/vault">Open research log</Link>
-          </div>
-        </StateBlock>
       ) : null}
 
       {run.status === 'error' ? (

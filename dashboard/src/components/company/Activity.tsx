@@ -42,8 +42,7 @@ function filingItem(f: SecFiling): TimelineItem {
   }
 }
 
-/** Opening the article itself is a Pro feature, as the pricing page states. */
-export function newsItem(h: Headline, { linked = false, thumbs = true }: { linked?: boolean; thumbs?: boolean } = {}): TimelineItem {
+export function newsItem(h: Headline, { thumbs = true }: { thumbs?: boolean } = {}): TimelineItem {
   const carried = h.corroboratedBy.length > 1 ? `carried by ${h.corroboratedBy.length} vendors` : null
   // Tone is shown only with the vendor that scored it; unscored is not neutral.
   const tone = h.sentimentLabel && h.sentimentSource ? `${h.sentimentLabel.toLowerCase()} per ${h.sentimentSource}` : null
@@ -53,7 +52,7 @@ export function newsItem(h: Headline, { linked = false, thumbs = true }: { linke
     kind: 'news',
     title: h.title,
     detail: [h.source, carried, tone].filter(Boolean).join(' · '),
-    href: linked && h.url ? h.url : undefined,
+    href: h.url || undefined,
     external: true,
     media: thumbs ? <Thumb src={h.imageUrl} source={h.source} url={h.url} width={72} ratio="16 / 10" /> : undefined,
   }
@@ -86,10 +85,10 @@ function runItems(runs: AnalysisSnapshot[]): TimelineItem[] {
   }))
 }
 
-export function activityItems(a: Analysis, runs: AnalysisSnapshot[], linked = false): TimelineItem[] {
+export function activityItems(a: Analysis, runs: AnalysisSnapshot[]): TimelineItem[] {
   return [
     ...(a.filings?.filings ?? []).map(filingItem),
-    ...a.headlines.map((h) => newsItem(h, { linked })),
+    ...a.headlines.map((h) => newsItem(h)),
     ...runItems(runs),
   ]
 }
@@ -110,9 +109,9 @@ function matches(item: TimelineItem, key: (typeof FILTERS)[number]['key']): bool
 }
 
 /** Filings, news and this browser's research runs on one dated line. */
-export function Activity({ a, limit = 12, linked = false }: { a: Analysis; limit?: number; linked?: boolean }) {
+export function Activity({ a, limit = 12 }: { a: Analysis; limit?: number }) {
   const runs = useHistory(a.ticker)
-  const items = useMemo(() => activityItems(a, runs, linked), [a, runs, linked])
+  const items = useMemo(() => activityItems(a, runs), [a, runs])
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all')
   const [more, setMore] = useState(false)
   const shown = items.filter((i) => matches(i, filter))

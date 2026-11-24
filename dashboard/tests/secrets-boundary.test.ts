@@ -32,13 +32,12 @@ const rel = (f: string) => relative(SRC, f).split(sep).join('/')
 
 /** Server-side configuration that must never be inlined or imported into a client chunk. */
 const SERVER_ENV =
-  /process\.env\.(CLERK_SECRET_KEY|RAZORPAY_KEY_SECRET|GCP_[A-Z_]+|CLOUD_RUN_AUDIENCE|BACKEND_ORIGIN|BACKEND_AUTH_MODE|VERCEL_OIDC_TOKEN)\b/
+  /process\.env\.(CLERK_SECRET_KEY|GCP_[A-Z_]+|CLOUD_RUN_AUDIENCE|BACKEND_ORIGIN|BACKEND_AUTH_MODE|BACKEND_SHARED_KEY|VERCEL_OIDC_TOKEN)\b/
 
 test('the inventory finds the modules that read server secrets', () => {
   const readers = FILES.filter((f) => SERVER_ENV.test(read(f))).map(rel)
   // A scan that found nothing would pass every test below for the wrong reason.
   assert.ok(readers.includes('lib/backend-proxy.ts'), readers.join(', '))
-  assert.ok(readers.some((r) => r.startsWith('app/payment/')), readers.join(', '))
 })
 
 test('no client component imports a module that reads a server secret', () => {
@@ -66,7 +65,6 @@ const PUBLIC_ALLOWED = new Set([
   'NEXT_PUBLIC_SITE_URL',
   'NEXT_PUBLIC_BUILD_SHA', 'NEXT_PUBLIC_BUILD_REF', 'NEXT_PUBLIC_BUILD_ENV',
   'NEXT_PUBLIC_BUILD_DEPLOYMENT', 'NEXT_PUBLIC_BUILD_TIME',
-  'NEXT_PUBLIC_RAZORPAY_KEY_ID',   // the publishable key id; the secret is server-side
   'NEXT_PUBLIC_LOGO_DEV_KEY',      // logo.dev publishable key
   'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', // pk_*: public by design; the secret is CLERK_SECRET_KEY
 ])

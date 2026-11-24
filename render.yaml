@@ -1,30 +1,52 @@
-# Render deployment.
+# Render Blueprint: the FinSignal research backend on Render's free plan.
 #
-# ONE service: inference. Training never runs here — it needs 14 GB of Dolt
-# clones and hours of CPU, and neither belongs on a request path. The deployable
-# unit is an 89 KB estimator plus its feature schema, which is why this image
-# does not carry the research dependencies at all.
+# Free means: no card, 512 MB of memory, a fraction of one CPU, and 750
+# instance hours a month per workspace, which covers one service running all
+# month. A free service sleeps after 15 minutes without a request; the "Alert
+# checks" GitHub Action calls it every ten minutes, which keeps it awake. Keep
+# no other free service in the same workspace, or the two share those hours.
+#
+# The website (Vercel) reaches this service through its server-side proxy, and
+# every request carries BACKEND_SHARED_KEY; any other caller is refused. The
+# secrets are not declared here: after the Blueprint creates the service, paste
+# the file `free_deploy.py env-files` writes (.env.render) into Environment →
+# "Add from .env". See docs/FREE_DEPLOYMENT.md.
+#
+# The separate research-inference service this file used to declare is not
+# needed: the backend reads the same committed model snapshot itself when
+# QUANT_INFERENCE_URL is unset (src/services/inference_client.py).
 services:
   - type: web
-    name: minialaddin-quant-inference
-    runtime: python
+    name: finsignal-api
+    runtime: docker
     plan: free
-    region: oregon
-    rootDir: .
-    buildCommand: pip install -r services/inference/requirements.txt
-    startCommand: uvicorn services.inference.app:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    # The service is deliberately lightweight and loads only committed artifacts.
-    # Dependency/artifact fixes must reach the existing service on a main-branch push.
+    # Next to Vercel's default function region (Washington, D.C.) and the US
+    # market-data vendors.
+    region: virginia
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Liveness only, and the one path the shared key leaves open.
+    healthCheckPath: /api/health
     autoDeploy: true
+    # Rebuild only when what the image is built from changes, not on every
+    # website commit: a free workspace has 500 build minutes a month.
+    buildFilter:
+      paths:
+        - api/**
+        - src/**
+        - services/**
+        - config/**
+        - artifacts/**
+        - experiments/**
+        - data/manifests/**
+        - data/research/**
+        - requirements.txt
+        - Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.11
-      - key: MODEL_ARTIFACT_DIR
-        value: artifacts
-      - key: MODEL_ARTIFACT
-        value: gradient_boosting@EXP-006
-      # Browser origins allowed to call this directly. Empty by default: the
-      # FinSignal backend proxies it server-side, so no browser needs CORS.
-      - key: ALLOWED_ORIGINS
-        sync: false
+      - key: APP_ENV
+        value: production
+      # The 512 MB instance: the fixed, process-wide provider worker budget
+      # (PROD-INCIDENT-001 in docs/incidents).
+      - key: PROVIDER_CONCURRENCY_LIMIT
+        value: "8"

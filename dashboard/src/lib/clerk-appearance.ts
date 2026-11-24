@@ -1,6 +1,6 @@
 /*
- * The product accent as a literal, for the two third-party widgets (this one and the Razorpay
- * checkout) that take a colour string and cannot read a CSS variable. It is the light-theme accent
+ * The product accent as a literal, for the third-party sign-in widget, which takes a colour
+ * string and cannot read a CSS variable. It is the light-theme accent
  * from styles/tokens.css, which keeps at least 3:1 against both the light and the dark panel (the
  * near-white dark-theme accent would vanish on white). `tests/third-party-theme.test.ts` holds it equal
  * to the token, so it cannot drift back to a colour the product no longer uses.

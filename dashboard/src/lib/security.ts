@@ -41,10 +41,18 @@ export interface Quote {
   source: string | null
   /** The provider's own staleness flag. Never inferred from the timestamp. */
   stale: boolean
+  /** A date for a daily close; a full timestamp for a live last sale. */
   as_of?: string | null
+  /** "daily close", or the live vendor's own basis ("last sale"). */
   price_basis?: string | null
-  /** The three months of daily closes the quote was computed from. */
+  /** The three months of daily closes the quote was computed from, ending
+   *  with the live price when there is one for a later session. */
   closes?: number[]
+  /** Set only when a live price stands over the daily history: the session it
+   *  belongs to, and the last close and vendor the week and trend come from. */
+  session?: string | null
+  history_as_of?: string | null
+  history_source?: string | null
 }
 
 /** A successful retrieval is not evidence that a daily close is live. */

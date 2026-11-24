@@ -201,14 +201,13 @@ const SECTIONS: LegalSection[] = [
     ),
   },
   {
-    id: 'paid-access',
-    title: 'Paid access',
+    id: 'cost',
+    title: 'Cost',
     body: (
       <p>
-        FinSignal can be used free of charge, up to a daily limit on research runs. Pro is a one-time payment, shown
-        with its price before you pay, that unlocks the paid features on your account. There is no recurring charge.
-        Payments are processed by Razorpay under its own terms; FinSignal does not receive or store your card or bank
-        details. For any question about a payment, use the contact channel below.
+        FinSignal is free to use. There is no paid tier, no daily limit on research runs and no payment of any kind,
+        and it never asks for card or bank details. The data it shows comes from providers&rsquo; free plans, which set
+        their own request limits; when one is reached, the affected source is reported as unavailable for that run.
       </p>
     ),
   },

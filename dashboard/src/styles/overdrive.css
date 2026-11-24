@@ -725,30 +725,6 @@ a.panel:hover { border-color: var(--accent-line); background-color: var(--p-rais
 
 .lp-rules li { border-left-color: var(--accent-line); }
 
-/* pricing */
-
-.lp-plan {
-  border-radius: var(--r-lg);
-  background: var(--grad-edge), var(--p-panel);
-  box-shadow: inset 0 0 0 1px var(--rule), var(--lift-1);
-}
-.lp-plan--pro {
-  position: relative;
-  border: 1px solid transparent;
-  background:
-    linear-gradient(color-mix(in srgb, var(--accent) 6%, var(--p-panel)), var(--p-panel)) padding-box,
-    linear-gradient(150deg, var(--accent), var(--accent-line) 40%, var(--rule-strong) 70%, var(--accent-line)) border-box;
-  box-shadow: 0 30px 80px -40px var(--accent), var(--edge-hi);
-}
-.lp-plan__name { font-family: var(--font-display); font-size: var(--t-body-lg); color: var(--ink); }
-.lp-plan__price .sys-num { font: 700 clamp(36px, 4vw, 52px) / 1 var(--font-display); letter-spacing: var(--tracking-figure); }
-.lp-plan--pro .lp-plan__price .sys-num {
-  background: var(--grad-brand);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 /* faq */
 
 .lp-faq__item {
@@ -872,12 +848,8 @@ a.panel:hover { border-color: var(--accent-line); background-color: var(--p-rais
 .panel--pad { padding: var(--d-4); }
 .h-panel { font: 600 var(--t-body) / 1.3 var(--font-sans); color: var(--ink); letter-spacing: 0; }
 .h-panel--sub { font-size: var(--t-body-lg); }
-.h-panel--lg { font-size: var(--t-lead); }
 
 /* ── small layout corrections ──────────────────────────────────────────── */
-
-/* A plan's list keeps its own rhythm; the card's spare height goes below it. */
-.lp-plan ul { align-content: start; }
 
 /* Under reduced motion the marquee is a still, centred, wrapping line: one
    copy of the claims, no fade at the edges. */

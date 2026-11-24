@@ -9,7 +9,6 @@ const COLUMNS = [
       { href: '/terminal', label: 'Terminal' },
       { href: '/news', label: 'Market news' },
       { href: '/#methodology', label: 'Methodology' },
-      { href: '/#pricing', label: 'Pricing' },
     ],
   },
   {

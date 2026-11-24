@@ -1,0 +1,65 @@
+name: Alert checks
+
+# One pass of the alert evaluator every ten minutes, free on a public
+# repository. It does three jobs at once:
+#
+#  - evaluates every price alert (what Cloud Scheduler did on the old setup);
+#  - keeps the free Render service awake, which sleeps after 15 minutes
+#    without a request and takes about a minute to wake;
+#  - keeps the free Supabase project active, which pauses after a week
+#    without database activity: each pass reads the alerts table.
+#
+# GitHub runs schedules on a best-effort basis, so a pass can be a few minutes
+# late; if the service fell asleep meanwhile, the retries below wait for it to
+# wake. GitHub also switches a schedule off after 60 days without a commit; the
+# weekly job below re-enables this workflow so it never lapses.
+#
+# Needs: the variable BACKEND_URL and the secrets BACKEND_SHARED_KEY and
+# ALERTS_SCHEDULER_TOKEN (set by `free_deploy.py github`). Skipped until then.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: alert-checks
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    if: ${{ vars.BACKEND_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Evaluate alerts
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          BACKEND_SHARED_KEY: ${{ secrets.BACKEND_SHARED_KEY }}
+          ALERTS_SCHEDULER_TOKEN: ${{ secrets.ALERTS_SCHEDULER_TOKEN }}
+        run: |
+          # A sleeping service answers once it has woken, about a minute;
+          # the retries cover that.
+          status=$(curl -sS -o response.json -w '%{http_code}' --max-time 120 \
+            --retry 4 --retry-delay 30 --retry-all-errors \
+            -X POST "$BACKEND_URL/api/internal/alerts/evaluate" \
+            -H "X-Backend-Key: $BACKEND_SHARED_KEY" \
+            -H "X-Scheduler-Token: $ALERTS_SCHEDULER_TOKEN" || true)
+          echo "HTTP $status"
+          head -c 600 response.json 2>/dev/null; echo
+          test "$status" = "200"
+
+  keep-enabled:
+    if: ${{ github.event.schedule == '17 3 * * 1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Re-enable this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/alerts.yml/enable"

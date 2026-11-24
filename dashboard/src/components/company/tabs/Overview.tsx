@@ -89,16 +89,14 @@ function Macro({ a }: { a: Analysis }) {
   )
 }
 
-export default function Overview({ symbol, analysis, isPro, requestUpgrade }: {
+export default function Overview({ symbol, analysis }: {
   symbol: string
   analysis: Analysis | null
-  isPro: boolean
-  requestUpgrade: (reason?: 'limit' | 'feature') => void
 }) {
   return (
     <div className="cw-overview">
       <div className="cw-grid cw-grid--main">
-        <ChartPanel symbol={symbol} isPro={isPro} requestUpgrade={requestUpgrade} />
+        <ChartPanel symbol={symbol} />
         {analysis ? <Drivers a={analysis} /> : <Pending title="Signal decomposition" rows={4} />}
       </div>
       <div className="cw-grid cw-grid--main">
@@ -112,7 +110,7 @@ export default function Overview({ symbol, analysis, isPro, requestUpgrade }: {
       </div>
       {analysis ? (
         <div className="cw-grid cw-grid--side">
-          <Activity a={analysis} linked={isPro} />
+          <Activity a={analysis} />
           <Profile profile={analysis.profile} />
         </div>
       ) : null}

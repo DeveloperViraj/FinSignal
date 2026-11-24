@@ -12,7 +12,6 @@ import { DeterministicConclusion, FactorTable, Table } from '../Conclusion'
 import { Diverging } from '../Panels'
 import { FAMILY_LABEL, FAMILY_ORDER, familyScore, providerSet, signalTone } from '../derive'
 import { usePriceSeries } from '../useCompany'
-import { useEntitlement } from '@/components/system/Entitlement'
 import CompanyMark from '@/components/ui/CompanyMark'
 import SectorMark, { sectorKey } from '@/components/visual/SectorMark'
 import Timeline from '@/components/visual/Timeline'
@@ -273,7 +272,6 @@ function NarrativeMeta({ ai, cited }: { ai: NonNullable<Analysis['ai']>; cited: 
 }
 
 export default function Report({ analysis: a }: { analysis: Analysis }) {
-  const { isPro } = useEntitlement()
   const ai = a.ai
   const status = synthesisStatus(ai)
   const index = useMemo(() => citationIndex(ai), [ai])
@@ -457,7 +455,7 @@ export default function Report({ analysis: a }: { analysis: Analysis }) {
         {a.headlines.length ? (
           <Section id="news" title="News and events">
             {gen && ai?.newsReasoning ? <p className="rp-prose rp-prose--gen">{ai.newsReasoning}<Cites ids={one('news_reasoning')} index={index} symbol={a.ticker} /></p> : null}
-            <Timeline items={a.headlines.map((h) => newsItem(h, { linked: isPro }))} limit={8} />
+            <Timeline items={a.headlines.map((h) => newsItem(h))} limit={8} />
             {a.newsStream ? <p className="rp-src">{a.newsStream.unique} distinct stories from {a.newsStream.providers.join(', ')} · {a.newsStream.corroborated} corroborated by more than one vendor.</p> : null}
           </Section>
         ) : null}

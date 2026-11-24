@@ -84,7 +84,9 @@ test('headings and labels take their size from a class', () => {
     }
   }
   assert.deepEqual(offenders, [])
-  for (const level of ['.h-panel--sub', '.h-panel--lg']) assert.ok(STYLES.includes(level), `${level} is missing`)
+  // `.h-panel--lg` went with the upgrade dialog, its only reader; the dead-CSS
+  // test would refuse it as an unused class.
+  for (const level of ['.h-panel--sub']) assert.ok(STYLES.includes(level), `${level} is missing`)
 })
 
 test('a text field is the same height as the button beside it', () => {

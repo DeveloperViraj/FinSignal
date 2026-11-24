@@ -11,7 +11,6 @@ import RunPreview from '@/components/marketing/RunPreview'
 import Icon, { type IconName } from '@/components/shell/Icon'
 import { RECORDED_LABEL, recordedAnalysis as run } from '@/components/marketing/recordedRun'
 import MarketNews from '@/components/terminal/home/MarketNews'
-import { FREE_DAILY_LIMIT } from '@/lib/usage'
 
 export const metadata: Metadata = {
   // Inherits the root default title; the template would double the brand here.
@@ -79,8 +78,8 @@ const FAQ = [
     a: 'No. FinSignal is a research and education tool. It summarizes public data into a structured, repeatable readout; it does not know your situation, and a signal is a summary of evidence, not a recommendation. Decisions and their consequences remain yours.',
   },
   {
-    q: 'Is Pro a subscription?',
-    a: 'No. Pro is a single ₹100 payment through Razorpay that unlocks the paid features on your account. There is no recurring charge and nothing to cancel.',
+    q: 'Does it cost anything?',
+    a: 'No. Every feature is free: no daily limit, no paid tier and no card. The data comes from the providers’ free plans, so when one of them hits its own rate limit the run says that source did not answer.',
   },
 ]
 
@@ -112,7 +111,7 @@ export default function LandingPage() {
               <li>Every figure sourced</li>
               <li>AI explains, never decides</li>
             </ul>
-            <p className="lp-fine">Free: {FREE_DAILY_LIMIT} research runs a day, no card required.</p>
+            <p className="lp-fine">Free, with no daily limit and no card.</p>
           </div>
           <div className="lp-stage">
             <RunPreview />
@@ -252,42 +251,6 @@ export default function LandingPage() {
             <h2 className="lp-h2">Market news, with its sources</h2>
           </header>
           <MarketNews count={5} />
-        </div>
-      </section>
-
-      {/* ── pricing ──────────────────────────────────────────────────── */}
-      <section id="pricing" className="lp-section">
-        <div className="lp-container">
-          <header className="lp-section__head" data-reveal>
-            <p className="lp-eyebrow">Pricing</p>
-            <h2 className="lp-h2">Free to use daily. Pro when you need depth.</h2>
-          </header>
-          <div className="lp-plans" data-reveal>
-            <div className="lp-plan">
-              <p className="lp-plan__name">Free</p>
-              <p className="lp-plan__price"><span className="sys-num">₹0</span></p>
-              <ul>
-                <li>{FREE_DAILY_LIMIT} research runs a day</li>
-                <li>Full signal, evidence record and synthesis</li>
-                <li>Three-month price charts</li>
-                <li>Macro conditions from FRED</li>
-                <li>Headlines, without article links</li>
-              </ul>
-              <Link href="/sign-up" className="lp-btn">Start free</Link>
-            </div>
-            <div className="lp-plan lp-plan--pro">
-              <p className="lp-plan__name">Pro</p>
-              <p className="lp-plan__price"><span className="sys-num">₹100</span><small>one-time</small></p>
-              <ul>
-                <li>Unlimited research runs</li>
-                <li>Every chart window, one month to five years</li>
-                <li>Full article access from the news evidence</li>
-                <li>Everything in Free</li>
-              </ul>
-              <Link href="/start" prefetch={false} className="lp-btn lp-btn--primary">Go Pro in the terminal</Link>
-            </div>
-          </div>
-          <p className="lp-note lp-note--center">Payments through Razorpay. One payment, no renewal.</p>
         </div>
       </section>
 

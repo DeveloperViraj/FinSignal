@@ -7,8 +7,8 @@ import Logo from '@/components/ui/Logo'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 
 const NAV = [
+  { href: '/#features', label: 'Features' },
   { href: '/#methodology', label: 'Methodology' },
-  { href: '/#pricing', label: 'Pricing' },
   { href: '/news', label: 'News' },
 ]
 

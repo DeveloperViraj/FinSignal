@@ -13,8 +13,7 @@ export const metadata: Metadata = {
 /*
  * Written from the code, not from a template: every item below corresponds to
  * something the application does (Clerk sign-in, the Supabase tables keyed to
- * the Clerk user id, Razorpay identifiers in account metadata, browser
- * storage keys, request logs, /api/ask). Nothing is promised that the code does
+ * the Clerk user id, browser storage keys, request logs, /api/ask). Nothing is promised that the code does
  * not establish — in particular there is no automatic deletion of saved data
  * when a sign-in account is removed, and the page says so.
  */
@@ -50,11 +49,6 @@ const SECTIONS: LegalSection[] = [
           </dd>
           <dt>Questions you type</dt>
           <dd>Questions asked in the terminal&rsquo;s explanation features, and the companies and terms you search for.</dd>
-          <dt>Payments</dt>
-          <dd>
-            If you buy Pro, Razorpay processes the payment. FinSignal keeps the Razorpay order and payment identifiers
-            and the fact that your account has Pro. It never receives your card or bank details.
-          </dd>
           <dt>Request logs</dt>
           <dd>
             Each request to the backend is logged with a request identifier, the method and path, the response status,
@@ -81,8 +75,7 @@ const SECTIONS: LegalSection[] = [
           <li><strong>Clerk</strong> — sign-in and account management.</li>
           <li><strong>Supabase</strong> — the database that holds the research you save.</li>
           <li><strong>Vercel</strong> — hosting for the website.</li>
-          <li><strong>Google Cloud</strong> — hosting for the research backend, and its request logs.</li>
-          <li><strong>Razorpay</strong> — payments, if you buy Pro.</li>
+          <li><strong>Render</strong> — hosting for the research backend, and its request logs.</li>
           <li>
             <strong>Data providers</strong> (market data, filings, news and search services) — they receive the
             tickers, companies and search terms needed to answer a request, sent under the project&rsquo;s credentials,
@@ -103,9 +96,9 @@ const SECTIONS: LegalSection[] = [
     title: 'How long it is kept',
     body: (
       <p>
-        Research you save is kept until you delete it or ask for it to be removed. Payment identifiers are kept with
-        your account. Request logs are kept for the retention periods set in the hosting services. Information held by
-        Clerk, Razorpay and the other services above is kept under their own policies.
+        Research you save is kept until you delete it or ask for it to be removed. Request logs are kept for the
+        retention periods set in the hosting services. Information held by Clerk and the other services above is kept
+        under their own policies.
       </p>
     ),
   },
@@ -133,9 +126,8 @@ const SECTIONS: LegalSection[] = [
     body: (
       <p>
         Your browser reaches the research backend only through the website&rsquo;s authenticated server, and the
-        database answers only that backend: its row-level security denies every other client. Data-provider and
-        payment credentials are kept on the
-        servers and never sent to your browser. No system is perfectly secure; if you find a problem, please report it
+        database answers only that backend: its row-level security denies every other client. Data-provider
+        credentials are kept on the servers and never sent to your browser. No system is perfectly secure; if you find a problem, please report it
         through the contact channel below.
       </p>
     ),

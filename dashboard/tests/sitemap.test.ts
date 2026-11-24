@@ -17,7 +17,7 @@ test('every public Learn topic is listed, once', () => {
 })
 
 test('nothing behind sign-in is listed', () => {
-  const protectedPrefixes = ['/terminal', '/company', '/evidence', '/explore', '/beginner', '/intermediate', '/start', '/payment', '/api']
+  const protectedPrefixes = ['/terminal', '/company', '/evidence', '/explore', '/beginner', '/intermediate', '/start', '/api']
   for (const p of paths) assert.ok(!protectedPrefixes.some((x) => p === x || p.startsWith(`${x}/`)), p)
 })
 

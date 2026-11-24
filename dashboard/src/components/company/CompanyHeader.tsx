@@ -9,7 +9,7 @@ import { Inspectable } from '@/components/system'
 import CompanyMark from '@/components/ui/CompanyMark'
 import { sectorKey } from '@/components/visual/SectorMark'
 import { saveReport } from '@/lib/persistence'
-import { format } from '@/lib/quantity'
+import { format, formatMoment } from '@/lib/quantity'
 import { quoteState, type Quote } from '@/lib/security'
 import { emptySnapshot, recentSnapshot, subscribeSymbols } from '@/lib/symbols'
 import { venueLabel } from '@/lib/text'
@@ -219,7 +219,7 @@ export default function CompanyHeader({
             <>
               <span className="dot" data-tone={state === 'stale' ? 'warn' : 'muted'} aria-hidden />
               {quote.price_basis ?? 'last price'}
-              {quote.as_of ? ` · ${quote.as_of.slice(0, 16).replace('T', ' ')}` : ''}
+              {quote.as_of ? ` · ${quote.as_of.length > 10 ? formatMoment(quote.as_of) : quote.as_of}` : ''}
               {quote.source ? ` · ${quote.source}` : ''}
               {state === 'stale' ? ' · stale' : ''}
             </>

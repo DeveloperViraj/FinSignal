@@ -91,7 +91,6 @@ img { max-width: 100%; display: block; }
   letter-spacing: 0;
 }
 .h-panel--sub { font-size: var(--t-body-lg); }
-.h-panel--lg { font-size: var(--t-lead); }
 
 .lede {
   font-size: var(--t-lead);

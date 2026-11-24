@@ -56,8 +56,10 @@ disappears — correctly reported as unavailable, but with nothing behind it.
 the interface that would need them is not "missing data", it is a capability
 this stack does not have.
 
-**Massive is keyed on the deployment, not here.** It leads the price, series
-and company chains when present. Locally it is skipped, which is why the
+**Massive is keyed on the deployment, not here.** It leads the series and
+company chains when present. In the price chain it sits behind Tiingo,
+Finnhub, Twelve Data and FMP, because its quote (like Polygon's) is `/prev`,
+the previous session's aggregate, and a close must not outrank a live trade. Locally it is skipped, which is why the
 1,744 backend tests pass unchanged with it installed.
 
 ## Massive: what was verified without a credential

@@ -136,7 +136,7 @@ test('no headline means no sentiment score, rather than a score of zero', () => 
 test('the news panel gives each reason its own words', async () => {
   const News = (await import('../src/components/company/News')).default
   const render = (status: 'ok' | 'no_headlines' | 'unavailable' | 'not_requested', failed: string[] = []) =>
-    renderToStaticMarkup(createElement(News, { headlines: [], stream: null, status, failed, isPro: false, onUpgrade: () => {} }))
+    renderToStaticMarkup(createElement(News, { headlines: [], stream: null, status, failed }))
   const outage = render('unavailable', ['gnews', 'tavily'])
   assert.match(outage, /News sources did not answer for this run/)
   assert.match(outage, /gnews, tavily could not be reached/)

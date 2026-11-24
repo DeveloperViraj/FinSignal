@@ -1,8 +1,8 @@
-/* The two widgets that cannot read a CSS variable must still wear the product's colour.
+/* The widget that cannot read a CSS variable must still wear the product's colour.
 
-   The sign-in form and the Razorpay checkout take a colour string. Both carried `#1e6b54`, a green
-   from an earlier palette, while the product accent is blue, so the first screen a visitor sees and
-   the payment screen used a colour the rest of the product never does. The sign-in button also
+   The sign-in form takes a colour string. It carried `#1e6b54`, a green from an earlier palette,
+   while the product accent is blue, so the first screen a visitor sees used a colour the rest of
+   the product never does. The sign-in button also
    hard-coded white text on the accent: 2.9:1 on the dark theme's accent, below the 4.5:1 minimum.
    The CSS guard against hard-coded text on an accent fill never saw it because it read style
    sheets, and this one lives in a TypeScript style object. */
@@ -48,14 +48,8 @@ test('Clerk is themed with that accent, not a colour from an earlier palette', (
   assert.notEqual(clerkAppearance.variables.colorPrimary.toLowerCase(), '#1e6b54')
 })
 
-test('the Razorpay checkout is themed with the same accent', () => {
-  const dialog = readFileSync(join(SRC, 'components', 'terminal', 'UpgradeDialog.tsx'), 'utf8')
-  assert.match(dialog, /theme:\s*\{\s*color:\s*ACCENT_LITERAL\s*\}/)
-  assert.doesNotMatch(dialog, /#1e6b54/i)
-})
-
 test('no source file still carries the retired green', () => {
-  for (const file of ['lib/clerk-appearance.ts', 'components/terminal/UpgradeDialog.tsx', 'lib/theme.ts']) {
+  for (const file of ['lib/clerk-appearance.ts', 'lib/theme.ts']) {
     assert.doesNotMatch(readFileSync(join(SRC, file), 'utf8'), /#1e6b54/i, file)
   }
 })

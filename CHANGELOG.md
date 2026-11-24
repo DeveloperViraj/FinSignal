@@ -6,6 +6,41 @@ test that has been shown capable of failing.
 
 ## V15 — research platform (in progress)
 
+### No paid tier (2026-11-24)
+
+**Everything is free.** The ₹100 Pro upgrade and its Razorpay checkout are gone: the payment routes,
+the upgrade dialog, the pricing section, the Razorpay package and its keys, and Razorpay's three
+origins in the Content-Security-Policy. What Pro used to unlock is now everyone's: research runs
+have no daily limit (the five-a-day counter in browser storage is deleted), every chart window from
+one month to five years is open, and news stories link to their articles. The Terms' "Paid access"
+clause is replaced by one saying the product is free, and the Privacy page no longer describes
+payment data it does not collect.
+
+**Free hosting, no card anywhere.** `render.yaml` now declares the backend itself (`finsignal-api`,
+Docker, Render's free plan) instead of the unused inference service; Vercel's Hobby plan serves the
+website; and a GitHub Actions workflow ("Alert checks") evaluates price alerts every ten minutes,
+which also keeps the free backend awake and the free Supabase project active, and re-enables itself
+weekly so GitHub's 60-day inactivity rule never switches it off. A backend on the open internet is
+closed by `BACKEND_SHARED_KEY`: the website's proxy sends it as `X-Backend-Key`, and every other
+caller is refused before any work except `/api/health` (tests in `tests/test_backend_shared_key.py`
+and `dashboard/tests/backend-proxy.test.ts`). `scripts/deploy/free_deploy.py` generates the shared
+secrets and writes the settings files for both hosts without printing a value. Steps in
+`docs/FREE_DEPLOYMENT.md`. Hugging Face Spaces was considered and dropped: since mid-2026 a Docker
+Space needs a paid plan.
+
+### Live prices during the session (2026-11-23)
+
+**Quotes were yesterday's close all day.** The price chain led with Massive and Polygon, whose quote
+is `/prev`, the previous session's aggregate, and the batch quote endpoint read only daily closes. On
+the morning of 2026-11-23 NVDA was trading at $169 while every surface showed Friday's $125.53 and a
+14% fall. The price chain now asks the vendors that report a live last sale first (Tiingo, Finnhub,
+Twelve Data, FMP), with the close-based answers kept behind them as the fallback. `/api/quotes` lays
+a live last sale over the daily history when it belongs to the history's last session or a later one:
+the price, its trade time and vendor replace the close, the day's move is measured from the vendor's
+own previous close, and the week and sparkline continue from the history only when that previous
+close confirms both share a basis (within 2%). The company header shows the trade time as a UTC
+instant. Tests in `tests/test_quote_observation_integrity.py`.
+
 ### Nocturne redesign, upstream merge and hardening (2026-11-06)
 
 **Upstream work merged.** Everything from `iAakash1/miniAladdin` since the 2026-09-12 snapshot this

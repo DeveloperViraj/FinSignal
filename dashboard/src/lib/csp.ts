@@ -9,13 +9,12 @@
  *
  *  - **Scripts**: Next's own chunks (same origin); one inline bootstrap the app
  *    writes (`THEME_SCRIPT`, allowed by hash); Clerk's browser SDK, loaded from
- *    the instance's Frontend API host by a script Next already trusts; Cloudflare
- *    Turnstile, which Clerk adds for bot protection; and Razorpay Checkout,
- *    inserted by the upgrade dialog only when it opens.
+ *    the instance's Frontend API host by a script Next already trusts; and
+ *    Cloudflare Turnstile, which Clerk adds for bot protection.
  *  - **Network**: every `fetch` is same-origin (`/api/*` is a server-side proxy;
  *    nothing in a client component calls a third party), plus Clerk's Frontend API
- *    and telemetry, and Razorpay's checkout API.
- *  - **Frames**: Turnstile and Razorpay Checkout.
+ *    and telemetry.
+ *  - **Frames**: Turnstile.
  *  - **Images**: the app's own, `data:` and `blob:` for generated marks, Logo.dev
  *    and Parqet (company logos), Google's favicon service (a fallback), Clerk's
  *    avatars, and publishers' own article photographs, which can be any HTTPS
@@ -81,9 +80,6 @@ export async function scriptHash(text: string): Promise<string> {
   return `sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}`
 }
 
-const RAZORPAY_SCRIPT = 'https://checkout.razorpay.com'
-const RAZORPAY_API = 'https://api.razorpay.com'
-const RAZORPAY_TELEMETRY = 'https://lumberjack.razorpay.com'
 const TURNSTILE = 'https://challenges.cloudflare.com'
 const CLERK_TELEMETRY = ['https://clerk-telemetry.com', 'https://*.clerk-telemetry.com']
 const CLERK_IMAGES = 'https://img.clerk.com'
@@ -101,7 +97,6 @@ export function buildCsp(input: CspInput): string {
       // browser ignores host sources here and trusts what the nonce'd scripts load.
       ...(clerkHost ? [clerkHost] : []),
       TURNSTILE,
-      RAZORPAY_SCRIPT,
       "'strict-dynamic'",
       ...(input.development ? ["'unsafe-eval'"] : []),
     ],
@@ -113,16 +108,14 @@ export function buildCsp(input: CspInput): string {
       ...(clerkHost ? [clerkHost] : []),
       ...CLERK_TELEMETRY,
       CLERK_IMAGES,
-      RAZORPAY_API,
-      RAZORPAY_TELEMETRY,
     ],
-    'frame-src': ["'self'", TURNSTILE, RAZORPAY_API, RAZORPAY_SCRIPT],
+    'frame-src': ["'self'", TURNSTILE],
     'worker-src': ["'self'", 'blob:'],
     'manifest-src': ["'self'"],
     'media-src': ["'self'", 'blob:', 'data:'],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
-    'form-action': ["'self'", RAZORPAY_API],
+    'form-action': ["'self'"],
     'frame-ancestors': ["'none'"],
   }
 

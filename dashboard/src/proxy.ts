@@ -7,7 +7,7 @@ import { THEME_SCRIPT } from '@/lib/theme'
 /**
  * Public surface: the marketing site, live news (page + API), the macro
  * readout used on the landing page, auth pages and SEO files.
- * Everything else — the terminal, research/chart APIs, payments — requires auth.
+ * Everything else — the terminal and the research/chart APIs — requires auth.
  */
 const isPublic = createRouteMatcher([
   '/',

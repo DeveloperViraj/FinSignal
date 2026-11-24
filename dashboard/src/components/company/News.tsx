@@ -43,7 +43,7 @@ function Meta({ h }: { h: Headline }) {
   )
 }
 
-function Story({ h, lead, linked }: { h: Headline; lead?: boolean; linked: boolean }) {
+function Story({ h, lead }: { h: Headline; lead?: boolean }) {
   const body = (
     <>
       <Thumb src={h.imageUrl} source={h.source} url={h.url} width={lead ? '100%' : 124} ratio={lead ? '16 / 9' : '16 / 10'} />
@@ -54,7 +54,7 @@ function Story({ h, lead, linked }: { h: Headline; lead?: boolean; linked: boole
     </>
   )
   const cls = lead ? 'nw-story nw-story--lead' : 'nw-story'
-  return linked && h.url ? (
+  return h.url ? (
     <a className={cls} href={h.url} target="_blank" rel="noopener noreferrer">{body}</a>
   ) : (
     <div className={cls}>{body}</div>
@@ -65,14 +65,12 @@ function Story({ h, lead, linked }: { h: Headline; lead?: boolean; linked: boole
  * Company news from the provider fan-out. Publisher images only — a story
  * without one shows its publisher's mark, never a stock photograph.
  */
-export default function News({ headlines, stream, status = 'ok', failed = [], isPro, onUpgrade }: {
+export default function News({ headlines, stream, status = 'ok', failed = [] }: {
   headlines: Headline[]
   stream: NewsStream | null
   /** Why the list is empty, when it is. */
   status?: 'ok' | 'no_headlines' | 'unavailable' | 'not_requested'
   failed?: string[]
-  isPro: boolean
-  onUpgrade: () => void
 }) {
   if (!headlines.length) {
     // Three different facts that used to share one sentence. "No stories"
@@ -123,9 +121,6 @@ export default function News({ headlines, stream, status = 'ok', failed = [], is
             {stream?.sentiment ? ` · tone scored on ${stream.sentiment.scored} of ${stream.sentiment.scored + stream.sentiment.unscored} by ${stream.sentiment.source ?? 'one vendor'}` : ''}
           </span>
         </div>
-        {!isPro ? (
-          <button type="button" className="sys-btn sys-btn--ghost" onClick={onUpgrade}>Open articles with Pro</button>
-        ) : null}
       </header>
       {categories.length ? (
         <div className="nw-cats" role="group" aria-label="Story categories">
@@ -135,9 +130,9 @@ export default function News({ headlines, stream, status = 'ok', failed = [], is
         </div>
       ) : null}
       <div className="nw-body">
-        <Story h={lead} lead linked={isPro} />
+        <Story h={lead} lead />
         <div className="nw-list">
-          {rest.map((h, i) => <Story key={`${h.url || h.title}-${i}`} h={h} linked={isPro} />)}
+          {rest.map((h, i) => <Story key={`${h.url || h.title}-${i}`} h={h} />)}
         </div>
       </div>
     </section>

@@ -273,3 +273,32 @@ test('scheduler-only routes under /api/internal/ are refused before any upstream
   }
   assert.equal(calls, 0, 'the scheduler token is never forwarded through the website')
 })
+
+test('a public backend receives the shared key from the server, never a browser-supplied one', async (t) => {
+  const previousKey = process.env.BACKEND_SHARED_KEY
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.BACKEND_SHARED_KEY
+    else process.env.BACKEND_SHARED_KEY = previousKey
+  })
+  let outbound = new Headers()
+  arrange(t, async (_input, init) => {
+    outbound = new Headers(init?.headers)
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'X-Backend-Key': 'reflected-by-a-broken-upstream' },
+    })
+  })
+
+  delete process.env.BACKEND_SHARED_KEY
+  await proxyBackend(request({ 'X-Backend-Key': 'typed-by-a-visitor' }), ['research', 'NVDA'])
+  assert.equal(outbound.get('X-Backend-Key'), null, 'a browser cannot supply the key itself')
+
+  process.env.BACKEND_SHARED_KEY = 'server-side-key'
+  const response = await proxyBackend(request({
+    Authorization: 'Bearer clerk-session',
+    'X-Backend-Key': 'typed-by-a-visitor',
+  }), ['research', 'NVDA'])
+  assert.equal(outbound.get('X-Backend-Key'), 'server-side-key')
+  assert.equal(outbound.get('Authorization'), 'Bearer clerk-session', 'Clerk auth is untouched')
+  assert.equal(response.headers.get('x-backend-key'), null, 'the key is never reflected to the browser')
+})

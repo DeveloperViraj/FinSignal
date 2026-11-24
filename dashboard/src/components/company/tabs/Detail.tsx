@@ -47,15 +47,13 @@ export function FinancialsTab({ symbol, analysis }: { symbol: string; analysis: 
   )
 }
 
-export function TechnicalsTab({ symbol, analysis, isPro, requestUpgrade }: {
+export function TechnicalsTab({ symbol, analysis }: {
   symbol: string
   analysis: Analysis | null
-  isPro: boolean
-  requestUpgrade: (reason?: 'limit' | 'feature') => void
 }) {
   return (
     <div className="cw-stack">
-      <ChartPanel symbol={symbol} isPro={isPro} requestUpgrade={requestUpgrade} height={380} title="Price and volume" />
+      <ChartPanel symbol={symbol} height={380} title="Price and volume" />
       {analysis ? <TechnicalIntelligence block={analysis.technicalIntelligence} /> : null}
       <MarketStats symbol={symbol} />
     </div>
@@ -73,14 +71,10 @@ export function MacroTab({ analysis: a }: { analysis: Analysis }) {
   )
 }
 
-export function NewsTab({ analysis: a, isPro, requestUpgrade }: {
-  analysis: Analysis
-  isPro: boolean
-  requestUpgrade: (reason?: 'limit' | 'feature') => void
-}) {
+export function NewsTab({ analysis: a }: { analysis: Analysis }) {
   return (
     <div className="cw-stack">
-      <News headlines={a.headlines} stream={a.newsStream} status={a.newsStatus} failed={a.newsSourcesFailed} isPro={isPro} onUpgrade={() => requestUpgrade('feature')} />
+      <News headlines={a.headlines} stream={a.newsStream} status={a.newsStatus} failed={a.newsSourcesFailed} />
     </div>
   )
 }

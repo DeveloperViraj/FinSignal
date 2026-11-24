@@ -61,11 +61,15 @@ test('the security and company workspaces do not use developer words with a read
   assert.deepEqual(offenders, [])
 })
 
-test('no text a reader sees names Render, the retired host', () => {
+test('no message a reader sees gives advice about the backend host', () => {
   /* A failure message told readers the backend was "asleep (Render free tier cold-starts)" and
-     that Clerk answers signed-out API calls with a 404; production has been Cloud Run for a long
-     time and a signed-out call is a 401. Advice about the wrong system is worse than no advice. */
-  const offenders = visibleStrings()
+     that Clerk answers signed-out API calls with a 404, while production ran on Cloud Run and a
+     signed-out call is a 401. Advice about the wrong system is worse than no advice, and a host
+     can change again, so no message names one.
+
+     The privacy page is the exception: it must name the service that hosts the backend and keeps
+     its request logs, which is Render again on the free deployment (docs/FREE_DEPLOYMENT.md). */
+  const offenders = visibleStrings((p) => p !== 'app/(site)/privacy/page.tsx')
     .flatMap(({ file, line, text }) => (/\bRender\b/.test(text) ? [`${file}:${line}`] : []))
   assert.deepEqual(offenders, [])
 })

@@ -11,6 +11,7 @@ event loop for every concurrent request (see docs/AUDIT.md H3).
 
 from __future__ import annotations
 
+import hmac
 import logging
 import math
 import os
@@ -135,6 +136,37 @@ app.add_middleware(
 from api.persistence import router as persistence_router  # noqa: E402
 
 app.include_router(persistence_router)
+
+
+#: Paths a backend on the open internet still answers without the shared key:
+#: process liveness, which carries no data and no secret, for uptime checks.
+OPEN_PATHS = frozenset({"/api/health"})
+
+
+@app.middleware("http")
+async def require_backend_key(request, call_next):
+    """Answer only callers holding `BACKEND_SHARED_KEY`, when one is set.
+
+    A private Cloud Run service is closed by Google's IAM; a free host (a
+    Hugging Face Space, an open Render service) is not, and every research
+    route is callable without signing in. Anyone who found the address could
+    spend the deployment's free data-provider quotas. With the key set, the
+    website's server-side proxy and the alert scheduler send it in
+    `X-Backend-Key` and every other caller is refused before any work is
+    done. Unset — local development, private Cloud Run — nothing changes.
+
+    Defined before `request_logging` so that middleware wraps this one and a
+    refusal is still logged.
+    """
+    expected = os.getenv("BACKEND_SHARED_KEY", "")
+    if expected and request.method != "OPTIONS" and request.url.path not in OPEN_PATHS:
+        presented = request.headers.get("x-backend-key", "")
+        if not hmac.compare_digest(presented.encode(), expected.encode()):
+            return JSONResponse(
+                {"detail": "This backend answers only the FinSignal website."},
+                status_code=401,
+            )
+    return await call_next(request)
 
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
@@ -2604,6 +2636,13 @@ def get_quotes(symbols: str = Query(..., description="Comma-separated tickers, m
     Served from the MarketDataProvider series cache; per-symbol failures
     return an error entry rather than failing the batch.
 
+    When a live vendor reports a last sale for the history's last session or
+    a later one, that trade is the price (`price_basis` says "last sale",
+    `as_of` is the trade time) and the moves are measured from it; the daily
+    history stays the basis for the week and the sparkline, and is named in
+    `history_as_of` / `history_source`. Without one, the quote is the last
+    daily close and says so.
+
     Each quote also carries the three months of closes it was computed from.
     A list's sparklines used to request `/api/chart` once per row for the
     same series this handler had just read, which on a one-request-at-a-time
@@ -2614,6 +2653,7 @@ def get_quotes(symbols: str = Query(..., description="Comma-separated tickers, m
         raise HTTPException(status_code=400, detail="No symbols supplied")
 
     out: dict[str, Any] = {}
+    histories: dict[str, list] = {}
     for symbol in requested:
         if len(symbol) > 10:
             out[symbol] = {"error": "invalid symbol", "status": "invalid"}
@@ -2646,10 +2686,106 @@ def get_quotes(symbols: str = Query(..., description="Comma-separated tickers, m
                 "stale": result.stale,
                 "status": "stale" if result.stale else "ok",
             }
+            histories[symbol] = bars
         except Exception:  # noqa: BLE001 — one bad symbol never fails the batch
             logger.exception("quote failed for %s", symbol)
             out[symbol] = {"error": "unavailable", "status": "error"}
+
+    # Today's trading, on top of the history. Asked only for symbols that
+    # priced, side by side (each answer is cached for a minute), and only of
+    # vendors that report a live last sale.
+    if histories:
+        with ThreadPoolExecutor(max_workers=min(8, len(histories))) as pool:
+            live = dict(zip(histories, pool.map(_live_quote, histories)))
+        for symbol, bars in histories.items():
+            overlay = _live_overlay(live.get(symbol), bars)
+            if overlay:
+                overlay["history_source"] = out[symbol]["source"]
+                out[symbol].update(overlay)
     return {"quotes": out, "count": len(out)}
+
+
+#: How far a live vendor's previous close may sit from the history's last close
+#: before the two are treated as different bases (a split one side has adjusted
+#: for and the other has not) and never divided into each other.
+LIVE_BASIS_TOLERANCE = 0.02
+
+#: Calendar days a live session may follow the history's last bar when the
+#: vendor reports no previous close to check against: a weekend plus a holiday.
+LIVE_SESSION_GAP_DAYS = 4
+
+
+def _live_quote(symbol: str):
+    try:
+        return providers.market_data.get_live_price(symbol)
+    except Exception:  # noqa: BLE001 — a live quote is an addition, never a failure
+        logger.exception("live quote failed for %s", symbol)
+        return None
+
+
+def _session_of(stamp: str) -> Optional[str]:
+    """The exchange session a vendor's timestamp belongs to, as an ISO date."""
+    from src.quant.pit.calendar import session_date_from_epoch
+
+    try:
+        if len(stamp) <= 10:
+            return date.fromisoformat(stamp).isoformat()
+        instant = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=timezone.utc)
+        return session_date_from_epoch(instant.timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _live_overlay(quote, bars) -> Optional[dict[str, Any]]:
+    """The fields a live last sale replaces in a close-based quote, or None.
+
+    A daily history ends at the last close. During the session that close is
+    hours old, and a quote built from it showed Friday's price all Monday. The
+    live quote replaces the price only when it belongs to the history's last
+    session or a later one, and the moves are measured against closes only
+    when the vendor's own previous close confirms both sides share a basis.
+    """
+    if quote is None or not quote.ok or quote.data is None or quote.stale:
+        return None
+    q = quote.data
+    if not q.as_of or not q.price or not math.isfinite(q.price) or q.price <= 0:
+        return None
+    session = _session_of(q.as_of)
+    last = bars[-1].date
+    if session is None or session < last:
+        return None
+
+    closes = [bar.close for bar in bars]
+    # The history already holds a bar for this session (a partial bar during
+    # trading, or the final one after it): the live price stands in for it.
+    prior = closes if session > last else closes[:-1]
+    if not prior:
+        return None
+    if q.previous_close:
+        same_basis = abs(q.previous_close / prior[-1] - 1) <= LIVE_BASIS_TOLERANCE
+    else:
+        gap = (date.fromisoformat(session) - date.fromisoformat(last)).days
+        same_basis = gap <= LIVE_SESSION_GAP_DAYS
+
+    reference = q.previous_close or (prior[-1] if same_basis else None)
+    overlay: dict[str, Any] = {
+        "price": round(q.price, 2),
+        "as_of": q.as_of,
+        "price_basis": q.price_basis or "last sale",
+        "source": quote.source,
+        "session": session,
+        "change_1d": round((q.price / reference - 1) * 100, 2) if reference else None,
+        "change_1w": None,
+        # Where the moves and the sparkline come from, now that the price
+        # does not: a reader can see the two observations are different.
+        "history_as_of": last,
+    }
+    if same_basis:
+        overlay["change_1w"] = round((q.price / prior[-5] - 1) * 100, 2) if len(prior) >= 5 and prior[-5] else None
+        overlay["closes"] = [round(c, 2) for c in prior if math.isfinite(c)] + [round(q.price, 2)]
+    return overlay
 
 
 #: Trading sessions per tracker period. Counted on the security's own daily

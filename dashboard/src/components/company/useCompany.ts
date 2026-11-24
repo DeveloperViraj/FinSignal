@@ -9,13 +9,11 @@ import { shareResearch, type ResearchPayload } from '@/lib/research-cache'
 import { fetchIdentity, type SecurityIdentity } from '@/lib/security'
 import { rememberSymbol } from '@/lib/symbols'
 import type { Analysis, ChartSeries } from '@/lib/types'
-import { FREE_DAILY_LIMIT, bumpTodayCount, readTodayCount } from '@/lib/usage'
 
 export type ResearchRun =
   | { status: 'waiting' }
   | { status: 'running'; startedAt: number }
   | { status: 'ready'; analysis: Analysis; finishedAt: number }
-  | { status: 'limited' }
   | { status: 'error'; message: string; code: number | null }
 
 /**
@@ -23,35 +21,21 @@ export type ResearchRun =
  * visit, shared with every panel that reads research.
  */
 export function useResearch(ticker: string, {
-  fast, resolved, isPro, onLimit,
+  fast, resolved,
 }: {
   fast: boolean
-  /** Whether the session has resolved; entitlement is unknown before it. */
+  /** Whether the session has resolved; the run waits for it. */
   resolved: boolean
-  isPro: boolean
-  onLimit: () => void
 }): { run: ResearchRun; retry: () => void } {
   const [run, setRun] = useState<ResearchRun>({ status: 'waiting' })
   const [attempt, setAttempt] = useState(0)
   const delivered = useRef<string | null>(null)
-  const limitRef = useRef(onLimit)
-  useEffect(() => { limitRef.current = onLimit })
 
   useEffect(() => {
     if (!resolved) return undefined
     const key = `${ticker}:${fast}:${attempt}`
     if (delivered.current === key) return undefined
     let alive = true
-
-    if (!isPro && readTodayCount() >= FREE_DAILY_LIMIT) {
-      queueMicrotask(() => {
-        if (!alive) return
-        delivered.current = key
-        setRun({ status: 'limited' })
-        limitRef.current()
-      })
-      return () => { alive = false }
-    }
 
     // The narrative is written at the reader's usual depth; other depths are
     // re-explanations of the same evidence and never repeat this run.
@@ -66,7 +50,6 @@ export function useResearch(ticker: string, {
         const analysis = normalizeAnalysis(raw)
         setRun({ status: 'ready', analysis, finishedAt: Date.now() })
         recordAnalysis(analysis)
-        if (!isPro) bumpTodayCount()
       })
       .catch((e: unknown) => {
         if (!alive) return
@@ -79,7 +62,7 @@ export function useResearch(ticker: string, {
       })
 
     return () => { alive = false }
-  }, [ticker, fast, resolved, isPro, attempt])
+  }, [ticker, fast, resolved, attempt])
 
   return { run, retry: () => setAttempt((n) => n + 1) }
 }

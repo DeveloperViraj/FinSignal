@@ -93,7 +93,9 @@ class MarketDataProvider:
     SERIES_TTL = 300.0
 
     def __init__(self, cache: CacheBackend, flight: SingleFlight):
-        # Massive leads the price and history chains when a key is configured.
+        # Massive leads the history chain when a key is configured. In the
+        # price chain it sits behind the live-quote vendors, because its quote
+        # is the previous session's aggregate (see `_live_links`).
         # It speaks Polygon's wire format, so it costs no new dialect, and it
         # is the deployment's provisioned data source rather than a free tier.
         # Without MASSIVE_API_KEY the base class reports it unavailable and
@@ -119,15 +121,31 @@ class MarketDataProvider:
         return [self.massive, self.tiingo, self.polygon, self.finnhub, self.twelvedata,
                 self.fmp, self.marketstack, self.yfinance]
 
-    def get_price(self, symbol: str, validate: bool = True) -> ProviderResult[PriceQuote]:
-        symbol = symbol.upper()
-        links = [
-            ChainLink(self.massive, lambda: self.massive.get_price(symbol)),
+    def _live_links(self, symbol: str) -> list[ChainLink[PriceQuote]]:
+        """Vendors whose quote is the current session's last sale.
+
+        Massive and Polygon answer a quote from `/prev`, the previous session's
+        aggregate; MarketStack and yfinance answer from the last daily bar.
+        All four are a close, not a trade. While they led the chain, the first
+        of them to answer won, and during market hours every quote in the
+        product was yesterday's close: NVDA read $125.53 on a morning it was
+        trading at $169, with three live vendors configured and never asked.
+        """
+        return [
             ChainLink(self.tiingo, lambda: self.tiingo.get_price(symbol)),
-            ChainLink(self.polygon, lambda: self.polygon.get_price(symbol)),
             ChainLink(self.finnhub, lambda: self.finnhub.get_price(symbol)),
             ChainLink(self.twelvedata, lambda: self.twelvedata.get_price(symbol)),
             ChainLink(self.fmp, lambda: self.fmp.get_price(symbol)),
+        ]
+
+    def get_price(self, symbol: str, validate: bool = True) -> ProviderResult[PriceQuote]:
+        symbol = symbol.upper()
+        # Live quotes first; the close-based answers stay behind them as the
+        # degradation path, so a symbol no live vendor carries still prices.
+        links = [
+            *self._live_links(symbol),
+            ChainLink(self.massive, lambda: self.massive.get_price(symbol)),
+            ChainLink(self.polygon, lambda: self.polygon.get_price(symbol)),
             ChainLink(self.marketstack, lambda: self.marketstack.get_price(symbol)),
             ChainLink(self.yfinance, lambda: self.yfinance.get_price(symbol)),
         ]
@@ -141,6 +159,18 @@ class MarketDataProvider:
             links,
             cross_validate=(lambda quote: quote.price) if validate else None,
         )
+
+    def get_live_price(self, symbol: str) -> ProviderResult[PriceQuote]:
+        """The current session's last sale, or an error — never a close.
+
+        For callers that already hold the daily history and want only what it
+        cannot have: today's trading. Falling back to a close here would hand
+        them back the history's own last bar under a quote's name.
+        """
+        symbol = symbol.upper()
+        if _is_index_symbol(symbol):
+            return ProviderResult(data=None, error="no live quote source for an index", outage=False)
+        return self._price_chain.execute(f"price:{symbol}:live", self._live_links(symbol))
 
     def get_prices(self, symbols: list[str]) -> dict[str, ProviderResult[PriceQuote]]:
         """Batched quotes: cache + single-flight make repeats free; symbols

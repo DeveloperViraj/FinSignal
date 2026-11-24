@@ -46,9 +46,6 @@ export function tabFrom(value: string | null): TabKey {
 
 /** Shown in a tab that needs the research run before it can render. */
 function Awaiting({ run, what }: { run: ResearchRun; what: string }) {
-  if (run.status === 'limited') {
-    return <p className="cw-awaiting">The {what} needs a research run, and today&apos;s free runs are used. Price and history remain available on Overview and Technicals.</p>
-  }
   if (run.status === 'error') {
     return <p className="cw-awaiting">The {what} is unavailable because the research run did not complete. Retry from the status above.</p>
   }
@@ -65,11 +62,11 @@ export default function CompanyWorkspace({ ticker }: { ticker: string }) {
   const params = useSearchParams()
   const tab = tabFrom(params.get('tab'))
   const fast = params.get('fast') === '1'
-  const { resolved, isPro, requestUpgrade } = useEntitlement()
+  const { resolved } = useEntitlement()
   const { quotes, error: quoteError } = useQuotes([ticker])
   const quote = quotes[ticker] ?? null
   const identity = useIdentity(ticker)
-  const { run, retry } = useResearch(ticker, { fast, resolved, isPro, onLimit: () => requestUpgrade('limit') })
+  const { run, retry } = useResearch(ticker, { fast, resolved })
   const researched = run.status === 'ready' ? run.analysis : null
   // The narrative at the reader's chosen depth. Only `ai` is swapped; every
   // deterministic field is the research run's own.
@@ -164,7 +161,7 @@ export default function CompanyWorkspace({ ticker }: { ticker: string }) {
           onAlert={() => setAlertOpen(true)}
           identityPending={run.status === 'running' || run.status === 'waiting'}
         />
-        <SignalState run={run} onRetry={retry} onUpgrade={() => requestUpgrade('limit')} />
+        <SignalState run={run} onRetry={retry} />
       </div>
 
       <nav ref={tabsRef} className="cw-tabs" aria-label={`${ticker} research sections`}>
@@ -192,18 +189,18 @@ export default function CompanyWorkspace({ ticker }: { ticker: string }) {
 
       <div className="cw-body" data-tab={tab}>
         {tab === 'overview' ? (
-          <Overview symbol={ticker} analysis={analysis} isPro={isPro} requestUpgrade={requestUpgrade} />
+          <Overview symbol={ticker} analysis={analysis} />
         ) : null}
         {tab === 'report' ? (analysis ? <Report analysis={analysis} /> : <Awaiting run={run} what="report" />) : null}
         {tab === 'evidence' ? (analysis ? <Evidence analysis={analysis} /> : <Awaiting run={run} what="evidence record" />) : null}
         {tab === 'financials' ? (researchLive ? <FinancialsTab symbol={ticker} analysis={analysis} /> : <Awaiting run={run} what="financials" />) : null}
         {tab === 'technicals' ? (
           researchLive
-            ? <TechnicalsTab symbol={ticker} analysis={analysis} isPro={isPro} requestUpgrade={requestUpgrade} />
+            ? <TechnicalsTab symbol={ticker} analysis={analysis} />
             : <Awaiting run={run} what="technical read" />
         ) : null}
         {tab === 'macro' ? (analysis ? <MacroTab analysis={analysis} /> : <Awaiting run={run} what="macro context" />) : null}
-        {tab === 'news' ? (analysis ? <NewsTab analysis={analysis} isPro={isPro} requestUpgrade={requestUpgrade} /> : <Awaiting run={run} what="news record" />) : null}
+        {tab === 'news' ? (analysis ? <NewsTab analysis={analysis} /> : <Awaiting run={run} what="news record" />) : null}
         {tab === 'filings' ? (analysis ? <FilingsTab analysis={analysis} /> : <Awaiting run={run} what="filings record" />) : null}
         {tab === 'relationships' ? <RelationshipsTab symbol={ticker} /> : null}
         {tab === 'options' ? <OptionsTab symbol={ticker} price={quote?.price ?? null} /> : null}
