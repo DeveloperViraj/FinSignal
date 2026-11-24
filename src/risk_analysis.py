@@ -75,11 +75,16 @@ class FinSignalRiskEngine:
 
     def _fetch_inflation_rate(self) -> float:
         """Calculate year-over-year CPI inflation rate."""
-        cpi = self.fred.get_series(self.CPI_SERIES)
-        cpi = cpi.dropna()
-        current = float(cpi.iloc[-1])
-        year_ago = float(cpi.iloc[-13])  # ~12 months prior
-        return round(((current - year_ago) / year_ago) * 100, 2)
+        # Thirteen rows back is twelve months back only when no month is
+        # missing; FRED has no October 2025 CPI, so match the calendar month.
+        from src.providers.validation import latest_monthly_yoy
+
+        cpi = self.fred.get_series(self.CPI_SERIES).dropna()
+        measured = latest_monthly_yoy([(stamp.strftime("%Y-%m-%d"), float(value))
+                                       for stamp, value in cpi.items()])
+        if measured is None:
+            raise ValueError("FRED CPI has no month with a reading twelve months earlier")
+        return measured[0]
 
     def _fetch_fed_funds_rate(self) -> Optional[float]:
         """Fetch the effective Federal Funds Rate."""

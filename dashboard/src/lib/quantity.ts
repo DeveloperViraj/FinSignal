@@ -244,6 +244,14 @@ export function formatDay(v: string | null | undefined): string {
   return v && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : '—'
 }
 
+/** A monthly observation's period as "Sep 2026"; anything else as "—". */
+export function formatMonth(v: string | null | undefined): string {
+  const m = v ? /^(\d{4})-(\d{2})/.exec(v) : null
+  const month = m ? Number(m[2]) : 0
+  if (!m || month < 1 || month > 12) return '—'
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1]} ${m[1]}`
+}
+
 /** An instant as "Oct 7, 14:30 UTC": the same zone as every other timestamp here, and named. */
 export function formatMoment(v: string | null | undefined): string {
   const t = v ? Date.parse(v) : Number.NaN

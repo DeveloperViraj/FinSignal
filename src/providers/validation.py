@@ -198,3 +198,26 @@ def monthly_yoy(observations: list[tuple[str, float]], offset: int = 0) -> float
         return round(value, 2) if math.isfinite(value) else None
     except (TypeError, ValueError):
         return None
+
+
+#: How many months back `latest_monthly_yoy` may step to find a comparable one.
+YOY_FALLBACK_MONTHS = 3
+
+
+def latest_monthly_yoy(observations: list[tuple[str, float]],
+                       max_back: int = YOY_FALLBACK_MONTHS) -> tuple[float, str] | None:
+    """The newest year-over-year change that can be measured, and its month.
+
+    A month whose twelve-months-earlier reading is missing has no
+    year-over-year value; that month is not compared with a neighbour of its
+    prior year, which would measure eleven or thirteen months and call it
+    twelve. The newest month that does have its prior-year reading is used
+    instead, and its date is returned with it, so a reader and the freshness
+    gate both see which month the figure describes. (FRED has no October 2025
+    CPI, so October 2026 has no year-over-year value; September 2026 does.)
+    """
+    for offset in range(max_back + 1):
+        value = monthly_yoy(observations, offset)
+        if value is not None:
+            return value, str(observations[-1 - offset][0])[:10]
+    return None
