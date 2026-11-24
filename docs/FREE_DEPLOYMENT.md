@@ -15,7 +15,7 @@ The pieces depend on each other like this:
 ```
 browser ──► Vercel website ──(server-side proxy, X-Backend-Key)──► Render backend ──► Supabase
                                                                       ▲
-GitHub Actions, every 10 min ──(X-Backend-Key + X-Scheduler-Token)────┘
+GitHub Actions, 10-min, Mon–Fri ──(X-Backend-Key + X-Scheduler-Token)─┘
 ```
 
 The backend refuses every request without `BACKEND_SHARED_KEY` except
@@ -27,14 +27,20 @@ data-provider quotas. The key never reaches a browser: the proxy adds it.
 - A research run takes longer than on a laptop: the free instance has a
   fraction of a CPU. Measured locally a run costs 1.5–7 CPU-seconds, so expect
   roughly 15 seconds to over a minute; the website waits up to two minutes.
-- The alert checks call the backend every ten minutes, which keeps it awake.
-  GitHub sometimes runs a schedule late; if the backend fell asleep, the first
-  request after that waits about a minute while it wakes.
+- On weekdays (UTC) the alert checks call the backend every ten minutes, which
+  keeps it awake. GitHub sometimes runs a schedule late; if the backend fell
+  asleep, the first request after that waits about a minute while it wakes.
+- At weekends the markets are shut, the alert checks stop and the backend
+  sleeps after 15 idle minutes: the first visit then waits about a minute.
+  That is what keeps it inside the free hours: awake all week it would use
+  about 744 of the 750 a month, awake on weekdays about 550 at most.
 - Memory: the backend peaks near 220 MB of the 512 MB. Heavy research builds
   (Factor Lab panels) run offline, never in the web process; see
   `docs/incidents/PROD_INCIDENT_001_RENDER_MEMORY.md`.
-- Keep no other free service in the same Render workspace: free services share
-  the 750 monthly hours, and one service running all month uses about 744.
+- Free services in one Render workspace share its 750 monthly hours, and a
+  sleeping service uses none. Another free service that is mostly asleep fits
+  beside this one; one kept awake around the clock does not. **Billing →
+  Monthly Included Usage** shows the hours used so far.
 
 ## Setting it up
 
@@ -77,9 +83,12 @@ This writes two git-ignored files and prints only the names of the keys inside:
 
 - `.env.render`: in Render, open `finsignal-api` → **Environment** → **Add from
   .env**, paste the whole file, **Save**. Render redeploys.
-- `.env.vercel`: in Vercel, open the project → **Settings → Environment
-  Variables**, paste the whole file into the first field (Vercel splits it),
-  environment **Production**, **Save**, then **Deployments → Redeploy**.
+- `.env.vercel`: with the Vercel CLI signed in (`vercel whoami`), send it with
+  `python scripts/deploy/free_deploy.py vercel` (`--project` if the project is
+  not called `finsignal`). Without the CLI: open the project → **Settings →
+  Environment Variables**, paste the whole file into the first field (Vercel
+  splits it), environment **Production**, **Save**. Either way, then
+  **Deployments → Redeploy**.
 
 Delete both files once pasted.
 

@@ -2,7 +2,7 @@
 Vercel, and the alert checks on GitHub Actions. None of them needs a card.
 
 Secrets are read from the local, git-ignored env files and written only to
-other git-ignored env files or to the signed-in `gh` CLI. Nothing here prints a
+other git-ignored env files or to the signed-in `gh` and `vercel` CLIs. Nothing here prints a
 value: the output names keys, never their contents.
 
     python scripts/deploy/free_deploy.py keys
@@ -11,6 +11,10 @@ value: the output names keys, never their contents.
     python scripts/deploy/free_deploy.py env-files --backend URL --site URL
         Write .env.render (paste into Render: Environment → Add from .env) and
         .env.vercel (paste into Vercel: Settings → Environment Variables).
+
+    python scripts/deploy/free_deploy.py vercel [--project finsignal]
+        Send .env.vercel to the Vercel project through the signed-in Vercel
+        CLI, instead of pasting it into the Vercel dashboard.
 
     python scripts/deploy/free_deploy.py github --backend URL
         Give the "Alert checks" GitHub Action the backend address and the two
@@ -24,10 +28,12 @@ or with a suffix Render adds); `--site` is the Vercel address
 from __future__ import annotations
 
 import argparse
+import json
 import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -148,6 +154,42 @@ def cmd_env_files(args) -> None:
     print(f"wrote .env.vercel ({len(vercel)} keys: {', '.join(sorted(vercel))})")
 
 
+def vercel_api(path: str, body: object) -> dict:
+    """POST through the signed-in Vercel CLI; the body goes over stdin, never argv."""
+    exe = shutil.which("vercel")
+    if not exe:
+        sys.exit("the Vercel CLI is not installed (npm i -g vercel), or paste .env.vercel by hand")
+    # Run outside the checkout: a .vercel link left in it (this repository
+    # carried one to the upstream author's team) would choose that team.
+    done = subprocess.run([exe, "api", path, "-X", "POST", "--input", "-", "--raw"],
+                          cwd=tempfile.gettempdir(), input=json.dumps(body), text=True, capture_output=True)
+    out = done.stdout[done.stdout.find("{"):] if "{" in done.stdout else ""
+    try:
+        reply = json.loads(out) if out else {}
+    except json.JSONDecodeError:
+        reply = {}
+    if done.returncode != 0 or "error" in reply:
+        error = reply.get("error") or {"message": (done.stderr or done.stdout).strip()[-300:]}
+        sys.exit(f"Vercel refused {path}: {error.get('message', error)}")
+    return reply
+
+
+def cmd_vercel(args) -> None:
+    values = read_env(VERCEL_OUT)
+    if not values:
+        sys.exit("run the env-files command first; .env.vercel is missing or empty")
+    # NEXT_PUBLIC_* values are compiled into the page a browser downloads, so
+    # they are public by design; everything else stays encrypted at Vercel.
+    # One call per variable: `vercel api --input` takes a JSON object, not the
+    # array the endpoint also accepts.
+    for key, value in sorted(values.items()):
+        vercel_api(f"/v10/projects/{args.project}/env?upsert=true",
+                   {"key": key, "value": value, "target": ["production"],
+                    "type": "plain" if key.startswith("NEXT_PUBLIC_") else "encrypted"})
+        print(f"set {key}")
+    print(f"Vercel project {args.project} (production) has all {len(values)} settings; redeploy to use them")
+
+
 def gh(*args: str, value: str | None = None) -> None:
     exe = shutil.which("gh")
     if not exe:
@@ -171,6 +213,9 @@ def main() -> None:
     files.add_argument("--backend", required=True, help="the Render service's https address")
     files.add_argument("--site", required=True, help="the Vercel website's https address")
     files.set_defaults(run=cmd_env_files)
+    website = sub.add_parser("vercel")
+    website.add_argument("--project", default="finsignal", help="the Vercel project name")
+    website.set_defaults(run=cmd_vercel)
     github = sub.add_parser("github")
     github.add_argument("--backend", required=True, help="the Render service's https address")
     github.set_defaults(run=cmd_github)

@@ -1,13 +1,19 @@
 name: Alert checks
 
-# One pass of the alert evaluator every ten minutes, free on a public
-# repository. It does three jobs at once:
+# One pass of the alert evaluator every ten minutes, Monday to Friday (UTC),
+# free on a public repository. It does three jobs at once:
 #
 #  - evaluates every price alert (what Cloud Scheduler did on the old setup);
 #  - keeps the free Render service awake, which sleeps after 15 minutes
 #    without a request and takes about a minute to wake;
 #  - keeps the free Supabase project active, which pauses after a week
 #    without database activity: each pass reads the alerts table.
+#
+# Not at weekends: the markets are shut, so no alert can change, and a service
+# kept awake all week would spend about 744 of the 750 free instance hours a
+# Render workspace gets each month, leaving almost nothing for any other free
+# service there. Weekdays only spend about 550 at most. At a weekend the
+# service sleeps, and the first visit waits about a minute for it.
 #
 # GitHub runs schedules on a best-effort basis, so a pass can be a few minutes
 # late; if the service fell asleep meanwhile, the retries below wait for it to
@@ -19,7 +25,7 @@ name: Alert checks
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/10 * * * 1-5"
     - cron: "17 3 * * 1"
   workflow_dispatch:
 
