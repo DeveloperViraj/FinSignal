@@ -1,0 +1,10 @@
+# Findings gitleaks reports that are not secrets, one fingerprint each
+# (<commit>:<file>:<rule>:<line>), so a real finding elsewhere still fails.
+#
+# 85d3a00: the shared-key tests used 'k-0123456789abcdef', a fixture that
+# only looks like a key. The next commit replaced it with FIXTURE_KEY; the
+# history still carries the literal, which is why these stay listed.
+85d3a00faaeb82bf2f77a244fda079dd9a3c2e4e:tests/test_backend_shared_key.py:generic-api-key:32
+85d3a00faaeb82bf2f77a244fda079dd9a3c2e4e:tests/test_backend_shared_key.py:generic-api-key:44
+85d3a00faaeb82bf2f77a244fda079dd9a3c2e4e:tests/test_backend_shared_key.py:generic-api-key:46
+85d3a00faaeb82bf2f77a244fda079dd9a3c2e4e:tests/test_backend_shared_key.py:generic-api-key:52
