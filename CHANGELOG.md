@@ -6,6 +6,21 @@ test that has been shown capable of failing.
 
 ## V15 — research platform (in progress)
 
+### CPI across the missing October 2025 (2026-11-24)
+
+**The macro regime is computed again.** FRED has no October 2025 CPI (the 2025 federal shutdown), so
+October 2026, the newest print, has no reading twelve months earlier. Year-over-year inflation is
+compared month for month and never across a gap, so it came back empty, and with it the regime: every
+company page read "Macro regime unavailable" and the Market board dropped its CPI and Core CPI cards.
+`latest_monthly_yoy` now steps back, at most three months, to the newest month that has its prior-year
+reading (September 2026 against September 2025, 3.74%) and returns that month with the value. The
+research route records September as the observation date, so the freshness gate judges the month
+actually used; the Market board dates its cards to it; the company Overview shows the month beside the
+figure. The command-line risk engine took the reading thirteen rows back, which across the gap compared
+thirteen months and called it twelve; it now uses the same helper. Tests in
+`tests/test_macro_observation_integrity.py` use FRED's published values; the three that exercise the
+callers fail without the change.
+
 ### Free deployment, first week (2026-11-24)
 
 **Alert checks run Monday to Friday (UTC) only.** Kept awake all week, the free backend used about

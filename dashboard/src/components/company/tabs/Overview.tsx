@@ -5,6 +5,7 @@ import ChartPanel from '../ChartPanel'
 import { Card, Drivers, EvidenceCondition, Pending } from '../Panels'
 import Synthesis from '../Synthesis'
 import { companyHref } from '@/lib/context-commands'
+import { formatMonth } from '@/lib/quantity'
 import type { Analysis } from '@/lib/types'
 
 function pct(v: number | undefined | null, digits = 1): string {
@@ -81,7 +82,9 @@ function Macro({ a }: { a: Analysis }) {
         <div><dt>Regime</dt><dd>{m.status === 'UNAVAILABLE' ? <span className="sys-null">unavailable</span> : m.status.toLowerCase()}</dd></div>
         <div><dt>Risk multiplier</dt><dd className="sys-num">{m.srm === null ? '—' : m.srm.toFixed(2)}</dd></div>
         <div><dt>10y–2y spread</dt><dd className="sys-num">{m.yieldSpread === null ? '—' : `${m.yieldSpread.toFixed(2)}%`}</dd></div>
-        <div><dt>CPI (YoY)</dt><dd className="sys-num">{m.cpi === null ? '—' : `${m.cpi.toFixed(2)}%`}</dd></div>
+        {/* Dated: the month is not always the newest print. With no October 2025
+            CPI, October 2026 has no year-over-year figure and September is shown. */}
+        <div><dt>CPI (YoY)</dt><dd className="sys-num">{m.cpi === null ? '—' : `${m.cpi.toFixed(2)}%`}{m.cpi !== null && m.observationDates?.inflation_rate ? <span className="cw-kv__sub">{formatMonth(m.observationDates.inflation_rate)}</span> : null}</dd></div>
         <div><dt>Fed funds</dt><dd className="sys-num">{m.fedRate === null ? '—' : `${m.fedRate.toFixed(2)}%`}</dd></div>
         <div><dt>Stress probability</dt><dd className="sys-num">{q?.stressProbability === null || q?.stressProbability === undefined ? '—' : `${(q.stressProbability * 100).toFixed(1)}%`}</dd></div>
       </dl>

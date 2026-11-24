@@ -30,7 +30,7 @@ from typing import Any, Optional
 from src import providers
 from src.services import macro_freshness
 from src.providers.parallel import map_concurrent, values
-from src.providers.validation import monthly_yoy
+from src.providers.validation import YOY_FALLBACK_MONTHS, monthly_yoy
 from src.scoring.engine import map_verdict
 from src.scoring.fomc_calendar import FOMC_DECISION_DATES
 
@@ -133,14 +133,20 @@ def _macro_card(meta: dict[str, str]) -> Optional[dict[str, Any]]:
     observations = result.data
 
     yoy = meta.get("yoy") == "true"
+    updated = observations[-1][0]
     if yoy:
         # A missing prior year cannot turn an inflation rate into a CPI index.
         def yoy_at(offset: int) -> Optional[float]:
             return monthly_yoy(observations, offset)
 
-        current, previous = yoy_at(0), yoy_at(1)
+        # The newest month with a prior-year reading, and the card dated to it:
+        # with no October 2025 CPI, October 2026 has no y/y and September does.
+        start = next((i for i in range(YOY_FALLBACK_MONTHS + 1) if yoy_at(i) is not None), 0)
+        current, previous = yoy_at(start), yoy_at(start + 1)
+        if current is not None:
+            updated = observations[-1 - start][0]
         unit = "% y/y"
-        trend = [yoy_at(i) for i in range(5, -1, -1)]
+        trend = [yoy_at(i) for i in range(start + 5, start - 1, -1)]
         trend = [value for value in trend if value is not None]
     else:
         # Precision is the series' own: an exchange rate rounded to cents
@@ -164,7 +170,7 @@ def _macro_card(meta: dict[str, str]) -> Optional[dict[str, Any]]:
         "direction": ("up" if change > 0 else "down" if change < 0 else "flat") if change is not None else "flat",
         "unit": unit,
         "trend": trend,
-        "updated": observations[-1][0],
+        "updated": updated,
         "digits": places,
         "explain": meta["explain"],
         "source": result.source,

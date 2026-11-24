@@ -9,7 +9,7 @@ import math
 from typing import Optional
 
 from src.providers.base import FailureClass, VendorClient, VendorError
-from src.providers.validation import monthly_yoy
+from src.providers.validation import latest_monthly_yoy
 from src.providers.schemas import (
     AnalystTargets,
     CompanyProfile,
@@ -278,11 +278,15 @@ class FredVendor(VendorClient):
             # Year-over-year inflation needs the reading twelve months back;
             # three years of monthly values leaves room for a revised gap.
             cpi = _recent(fred, self.CPI_SERIES, 36)
-            inflation = monthly_yoy([(stamp.strftime("%Y-%m-%d"), float(value))
-                                     for stamp, value in cpi.items()])
+            measured = latest_monthly_yoy([(stamp.strftime("%Y-%m-%d"), float(value))
+                                           for stamp, value in cpi.items()])
+            inflation = measured[0] if measured else None
             observed = {
                 "yield_spread": spread_series.index[-1].strftime("%Y-%m-%d"),
-                "inflation_rate": cpi.index[-1].strftime("%Y-%m-%d"),
+                # The month the inflation figure describes, which is older than
+                # the newest CPI print when that print's prior year is missing;
+                # the freshness gate then judges the month actually used.
+                "inflation_rate": measured[1] if measured else cpi.index[-1].strftime("%Y-%m-%d"),
             }
             try:
                 fed_series = _recent(fred, self.FED_FUNDS_SERIES, 3)

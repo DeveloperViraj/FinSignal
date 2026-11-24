@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import Timeline from '../src/components/visual/Timeline'
 import { fmtDate } from '../src/lib/format'
-import { formatDay, formatMoment } from '../src/lib/quantity'
+import { formatDay, formatMoment, formatMonth } from '../src/lib/quantity'
 
 const ZONES = ['Pacific/Honolulu', 'America/Los_Angeles', 'UTC', 'Europe/London', 'Asia/Kolkata', 'Pacific/Auckland']
 
@@ -104,4 +104,24 @@ test('a memo with an unreadable time shows no time instead of throwing', async (
   const text = readFileSync(join(__dirname, '..', 'src', 'components', 'terminal', 'memos', 'Memos.tsx'), 'utf8')
   assert.doesNotMatch(text, /new Date\([^)]*updatedAt[^)]*\)\.toISOString\(\)/, 'toISOString() throws on an invalid time')
   assert.match(text, /Number\.isFinite\(ms\)/)
+})
+
+test('a monthly observation is named by its own month, in every zone', () => {
+  /* The CPI figure can describe a month older than the newest print (no October 2025
+     reading leaves October 2026 without a year-over-year value), so it carries its month.
+     Read from the string, never through Date, so no zone moves it into August. */
+  const before = process.env.TZ
+  try {
+    for (const zone of ['America/Los_Angeles', 'UTC', 'Asia/Kolkata']) {
+      process.env.TZ = zone
+      assert.equal(formatMonth('2026-09-01'), 'Sep 2026')
+    }
+  } finally {
+    if (before === undefined) delete process.env.TZ
+    else process.env.TZ = before
+  }
+  assert.equal(formatMonth('2026-12-31'), 'Dec 2026')
+  assert.equal(formatMonth('2026-13-01'), '—')
+  assert.equal(formatMonth(null), '—')
+  assert.equal(formatMonth('soon'), '—')
 })
