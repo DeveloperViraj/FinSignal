@@ -1,0 +1,196 @@
+'use client'
+
+import { Badge } from '@/components/system'
+import { useState } from 'react'
+import { uncertaintyBreakdown, fmtSigned, fmtNum } from '@/lib/format'
+import { FACTOR_LABELS } from '@/lib/history'
+import type { Analysis } from '@/lib/types'
+
+function ScorePill({ label, value }: { label: string; value: number | null }) {
+  if (value === null) {
+    return (
+      <div>
+        <span className="sys-label">{label}</span>
+        <p style={{ fontSize: 'var(--t-body)', color: 'var(--ink-faint)' }}>no data</p>
+      </div>
+    )
+  }
+  const color = value > 0.05 ? 'var(--e-pos)' : value < -0.05 ? 'var(--e-neg)' : 'var(--e-warn)'
+  return (
+    <div>
+      <span className="sys-label">{label}</span>
+      <p className="num" style={{ fontSize: 'var(--t-lead)', fontWeight: 600, color }}>
+        {fmtSigned(value, 2)}
+      </p>
+    </div>
+  )
+}
+
+/** Symmetric contribution bar: negative left, positive right of a center line. */
+function ContributionBar({ value, max }: { value: number; max: number }) {
+  const half = 50
+  const width = Math.min(half, (Math.abs(value) / max) * half)
+  const color = value >= 0 ? 'var(--e-pos)' : 'var(--e-neg)'
+  return (
+    <div style={{ position: 'relative', height: 6, background: 'var(--p-raised)', borderRadius: 'var(--r-sm)', flex: 1 }}>
+      <span style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--rule-strong)' }} />
+      <span
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: value >= 0 ? '50%' : `${half - width}%`,
+          width: `${width}%`,
+          background: color,
+          borderRadius: 'var(--r-sm)',
+        }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Phase 5: the full audit trail of the v2 scorecard. The contribution rows
+ * sum exactly to the composite — "where did this score come from?" is
+ * answered mechanically, not rhetorically.
+ */
+export default function QuantPanel({ analysis }: { analysis: Analysis }) {
+  const quant = analysis.quant
+  const [showAll, setShowAll] = useState(false)
+  if (!quant) return null
+
+  const factors = quant.factors
+    .filter((factor) => factor.score !== null)
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+  const visible = showAll ? factors : factors.slice(0, 6)
+  const maxContribution = Math.max(0.05, ...factors.map((f) => Math.abs(f.contribution)))
+  const gatePct = Math.round((1 - quant.macroGate) * 100)
+
+  return (
+    <section aria-label="Score decomposition" className="panel panel--pad">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
+        <h3 className="h-panel">Score decomposition</h3>
+        <span className="num" style={{ fontSize: 'var(--t-small)', color: 'var(--ink-faint)' }}>
+          {quant.modelVersion} · composite {fmtSigned(quant.rawScore, 3)}
+        </span>
+        {quant.regimes.map((regime) => (
+          <Badge key={regime} tone="warn">{regime.replace('_', ' ')}</Badge>
+        ))}
+        <span className="num" style={{ marginLeft: 'auto', fontSize: 'var(--t-small)', color: 'var(--ink-muted)' }}>
+          risk score {quant.riskScore}/100
+        </span>
+      </div>
+
+      {/* Family scores + weights */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'clamp(20px, 4vw, 44px)', marginBottom: 18 }}>
+        <ScorePill label={`Momentum · w ${quant.weightsUsed.momentum ?? '—'}`} value={quant.momentumScore} />
+        <ScorePill label={`Fundamental · w ${quant.weightsUsed.fundamental ?? '—'}`} value={quant.fundamentalScore} />
+        {quant.qualityScore !== null && (
+          <ScorePill label={`Quality · w ${quant.weightsUsed.quality ?? '—'}`} value={quant.qualityScore} />
+        )}
+        <ScorePill label={`News · w ${quant.weightsUsed.news ?? '—'}`} value={quant.newsScore} />
+        {quant.reversalScore !== null && (
+          <ScorePill label={`Reversal · w ${quant.weightsUsed.reversal ?? '—'}`} value={quant.reversalScore} />
+        )}
+        <div>
+          <span className="sys-label">Momentum gate</span>
+          <p className="num" style={{ fontSize: 'var(--t-lead)', fontWeight: 600, color: gatePct > 0 ? 'var(--e-warn)' : 'var(--ink)' }}>
+            ×{quant.macroGate.toFixed(2)}
+          </p>
+          <p className="u-meta">
+            {quant.stressProbability !== null
+              ? `stress p ${(quant.stressProbability * 100).toFixed(0)}%`
+              : gatePct > 0 ? `−${gatePct}% off bullish momentum` : 'no macro drag'}
+          </p>
+        </div>
+        <div>
+          <span className="sys-label">Conflict</span>
+          <p className="num" style={{ fontSize: 'var(--t-lead)', fontWeight: 600, color: quant.conflictIndex !== null && quant.conflictIndex > 0.15 ? 'var(--e-warn)' : 'var(--ink)' }}>
+            {quant.conflictIndex === null ? '—' : quant.conflictIndex.toFixed(2)}
+          </p>
+          {quant.conflictIndex === null && <p className="u-meta">not recorded</p>}
+        </div>
+        <div>
+          <span className="sys-label">Uncertainty</span>
+          <p className="num" style={{ fontSize: 'var(--t-lead)', fontWeight: 600 }}>
+            {quant.uncertainty === null ? '—' : `${(quant.uncertainty * 100).toFixed(0)}%`}
+          </p>
+          <p className="u-meta">
+            {quant.uncertainty === null ? 'not recorded' : uncertaintyBreakdown(quant.uncertaintyComponents)}
+          </p>
+        </div>
+      </div>
+
+      {/* Factor contributions */}
+      <p className="sys-label" style={{ marginBottom: 10 }}>
+        Factor contributions (sum = composite before gate)
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {visible.map((factor) => (
+          <div key={factor.name} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ flex: '0 1 172px', minWidth: 96, fontSize: 'var(--t-small)', color: 'var(--ink-muted)' }}>
+              {FACTOR_LABELS[factor.name] ?? factor.name}
+              {factor.z !== null && (
+                <span className="num" style={{ color: 'var(--ink-faint)' }}> z {fmtNum(factor.z, 1)}</span>
+              )}
+            </span>
+            <ContributionBar value={factor.contribution} max={maxContribution} />
+            <span
+              className="num"
+              style={{
+                width: 58,
+                textAlign: 'right',
+                fontSize: 'var(--t-small)',
+                color: factor.contribution >= 0 ? 'var(--e-pos)' : 'var(--e-neg)',
+                flexShrink: 0,
+              }}
+            >
+              {fmtSigned(factor.contribution, 3)}
+            </span>
+          </div>
+        ))}
+      </div>
+      {factors.length > 6 && (
+        <button
+          type="button"
+          className="sys-btn sys-btn--ghost sys-btn--xs"
+          style={{ marginTop: 10 }}
+          aria-expanded={showAll}
+          onClick={() => setShowAll((value) => !value)}
+        >
+          {showAll ? 'Show top 6' : `Show all ${factors.length} factors`}
+        </button>
+      )}
+
+      {/* Confidence + risk decomposition */}
+      <div className="hairline-top" style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 44px', marginTop: 16, paddingTop: 14 }}>
+        <div>
+          <p className="sys-label" style={{ marginBottom: 6 }}>Confidence composition</p>
+          <p className="num" style={{ fontSize: 'var(--t-small)', color: 'var(--ink-muted)', lineHeight: 1.7 }}>
+            {quant.confidenceLosses.length === 0
+              ? `No deductions — ${quant.confidence}%`
+              : `100 ${quant.confidenceLosses.map((loss) => `− ${loss.points} (${loss.component.toLowerCase()})`).join(' ')} = ${quant.confidence}%`}
+          </p>
+        </div>
+        <div style={{ maxWidth: 460 }}>
+          <p className="sys-label" style={{ marginBottom: 6 }}>
+            Risk composition (weight × percentile = contribution)
+          </p>
+          <p className="num" style={{ fontSize: 'var(--t-small)', color: 'var(--ink-muted)', lineHeight: 1.7 }}>
+            {quant.riskComponents.length === 0
+              ? '—'
+              : quant.riskComponents
+                  .map((component) => `${component.name.replace(/_/g, ' ')} ${component.contribution}`)
+                  .join(' · ')}
+          </p>
+        </div>
+        <div>
+          <p className="sys-label" style={{ marginBottom: 6 }}>Data completeness</p>
+ <p className="num u-note">
+            {(quant.dataCompleteness * 100).toFixed(0)}% of factors computable
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}

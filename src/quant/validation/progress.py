@@ -28,12 +28,16 @@ of what Activity Monitor shows, and saying so here is cheaper than a dependency.
 from __future__ import annotations
 
 import os
-import resource
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+try:  # POSIX only; Windows has no `resource` module
+    import resource
+except ImportError:  # pragma: no cover - exercised on Windows
+    resource = None  # type: ignore[assignment]
 
 
 def _rss_gb() -> float:
@@ -42,6 +46,8 @@ def _rss_gb() -> float:
     `ru_maxrss` is bytes on macOS and kilobytes on Linux — the platform check
     is not defensive noise, it is a factor of 1024.
     """
+    if resource is None:  # Windows: no getrusage; report zero rather than crash a run
+        return 0.0
     usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     divisor = 1024**3 if sys.platform == "darwin" else 1024**2
     return usage / divisor

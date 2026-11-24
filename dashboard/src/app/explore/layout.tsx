@@ -1,10 +1,10 @@
-import { ClerkProvider } from '@clerk/nextjs'
+import NonceClerkProvider from '@/components/auth/NonceClerkProvider'
 import type { Metadata } from 'next'
 
 import { EntitlementProvider } from '@/components/system/Entitlement'
 
 export const metadata: Metadata = {
-  title: 'Explore — miniAladdin',
+  title: { default: 'Screener', template: '%s · FinSignal' },
   description: 'Securities ranked across momentum, quality, value, risk and attention.',
 }
 
@@ -15,10 +15,10 @@ export const dynamic = 'force-dynamic'
 
 export default function ExploreLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
+    <NonceClerkProvider>
+      <div style={{ minHeight: '100vh', background: 'var(--p-base)', color: 'var(--ink)' }}>
         <EntitlementProvider>{children}</EntitlementProvider>
       </div>
-    </ClerkProvider>
+    </NonceClerkProvider>
   )
 }

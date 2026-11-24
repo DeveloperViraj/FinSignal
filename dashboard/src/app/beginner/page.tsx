@@ -51,7 +51,7 @@ export default function BeginnerHome() {
   return (
     <SimpleShell title="FinSignal" subtitle="what to look at, and why">
       <Panel title="Look up a company">
-        <form onSubmit={search} className="bg__search" role="search">
+        <form onSubmit={search} className="bg__search" role="search" aria-label="Look up a company">
           <label htmlFor="bg-symbol" className="visually-hidden">
             Company or ticker symbol
           </label>
@@ -64,7 +64,7 @@ export default function BeginnerHome() {
             autoComplete="off"
             spellCheck={false}
           />
-          <button type="submit">Analyse</button>
+          <button type="submit">Analyze</button>
         </form>
       </Panel>
 

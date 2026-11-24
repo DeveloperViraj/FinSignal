@@ -38,11 +38,10 @@ export default function LearnIndexPage() {
                 <Link
                   key={topic.slug}
                   href={`/learn/${topic.slug}`}
-                  className="panel"
-                  style={{ padding: '14px 16px', textDecoration: 'none', display: 'block' }}
-                >
-                  <p style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: 4 }}>{topic.entry.label}</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                  className="panel panel--compact"
+                  style={{ textDecoration: 'none', display: 'block' }}>
+                  <p style={{ fontSize: 'var(--t-body-lg)', fontWeight: 600, marginBottom: 4 }}>{topic.entry.label}</p>
+                  <p style={{ fontSize: 'var(--t-small)', color: 'var(--ink-muted)', lineHeight: 1.5 }}>
                     {topic.entry.short}
                   </p>
                 </Link>

@@ -1,0 +1,28 @@
+import NonceClerkProvider from '@/components/auth/NonceClerkProvider'
+import type { Metadata } from 'next'
+
+import { EntitlementProvider } from '@/components/system/Entitlement'
+
+export const metadata: Metadata = {
+  title: { default: 'Research terminal', template: '%s · FinSignal' },
+  robots: { index: false, follow: false },
+}
+
+/* The terminal is per-user and gated by auth — never prerendered. */
+export const dynamic = 'force-dynamic'
+
+export default function TerminalLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <NonceClerkProvider>
+      {/* Theme comes from html[data-theme]: dark by default on this route,
+          light if the user has explicitly chosen it. The base colour is on
+          html, so the ambient field behind body shows through here. */}
+      <div style={{ minHeight: '100vh', color: 'var(--ink)' }}>
+        {/* Session, usage and the upgrade flow, mounted once for every
+            workspace. These used to live inside the old shell, which is the
+            only reason the one route needing them could not be ported. */}
+        <EntitlementProvider>{children}</EntitlementProvider>
+      </div>
+    </NonceClerkProvider>
+  )
+}

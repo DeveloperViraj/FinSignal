@@ -1,0 +1,206 @@
+"""
+Apify vendor — web research normalized into citable evidence.
+
+Apify runs third-party Actors; their raw output is unstructured and
+inconsistent. This adapter's entire job is to turn that into
+ResearchClaim/ResearchEvidence objects that name their source, so web
+research is held to the same evidence standard as SEC filings.
+
+Discipline enforced here:
+  * A claim without at least one resolvable source URL is DISCARDED.
+    Unsourced web text is exactly the kind of input that would let
+    hallucinated content enter the platform through the back door.
+  * Web-sourced claims carry lower confidence than filings by
+    construction — they inform, they never override deterministic data.
+  * Actor runs are synchronous with a hard timeout; a slow or failed run
+    contributes nothing rather than blocking research.
+
+Requires APIFY_API_TOKEN. Absent it, the vendor is simply unavailable and
+every consumer degrades to the providers that remain.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+from src.providers.base import VendorClient
+from src.providers.research_schemas import (
+    KnowledgeBundle,
+    ResearchClaim,
+    ResearchEvidence,
+    ResearchSource,
+)
+
+logger = logging.getLogger(__name__)
+
+# Confidence is decided by the policy engine, not here — one place answers
+# "why is this number what it is". Kept as a module attribute because
+# existing tests assert the web/deterministic ordering through it.
+from src.services.confidence import for_provider as _confidence_for
+
+WEB_CLAIM_CONFIDENCE = _confidence_for("apify")
+
+# Domains whose content is not research-grade for financial claims.
+LOW_QUALITY_HOSTS = {
+    "reddit.com", "quora.com", "pinterest.com", "facebook.com",
+    "instagram.com", "tiktok.com", "x.com", "twitter.com",
+}
+
+
+def _host(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return ""
+
+
+def _sentences(text: str, limit: int = 4) -> list[str]:
+    """Split prose into claim-sized statements, dropping fragments."""
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    return [p.strip() for p in parts if len(p.strip()) > 40][:limit]
+
+
+class ApifyVendor(VendorClient):
+    NAME = "apify"
+    KEY_ENV = "APIFY_API_TOKEN"
+    DEFAULT_RPM = 6  # Actor runs are expensive; keep concurrency low
+
+    BASE = "https://api.apify.com/v2"
+
+    # Actor ids are overridable by env so a pricing or availability change
+    # never requires a code change.
+    #
+    # apify/rag-web-browser is Apify's own research actor: it runs a search
+    # and returns the resulting pages' content WITH their URLs, which is
+    # exactly the shape our sourced-claims model needs. It bills from
+    # platform credits.
+    #
+    # It replaces jons/perplexity-actor, which is a FLAT_PRICE_PER_MONTH
+    # rental ($30/mo): invoking a rental actor without an active
+    # subscription returns 403 Forbidden regardless of token validity —
+    # verified against the live Apify API, not inferred from the error.
+    RESEARCH_ACTOR = os.getenv("APIFY_RESEARCH_ACTOR", "apify/rag-web-browser")
+    GOOGLE_SEARCH_ACTOR = os.getenv("APIFY_SEARCH_ACTOR", "apify/google-search-scraper")
+
+    def _run_actor(self, actor_id: str, payload: dict[str, Any], timeout_secs: int = 90) -> list[dict[str, Any]]:
+        """Run an Actor synchronously and return its dataset items."""
+        actor_path = actor_id.replace("/", "~")
+        url = f"{self.BASE}/acts/{actor_path}/run-sync-get-dataset-items"
+        data = self._request_json(
+            "POST", url,
+            params={"token": self.api_key, "timeout": timeout_secs},
+            json_body=payload,
+            expect=list,
+        )
+        return [item for item in data if isinstance(item, dict)]
+
+    # ── research: sourced claims about a company ─────────────────────────────
+    def research_company(self, symbol: str, company_name: str, question: str = "") -> KnowledgeBundle:
+        """Web research → sourced claims. Unsourced output is discarded."""
+        if not self.available:
+            return KnowledgeBundle()
+        subject = company_name or symbol
+        query = question or (
+            f"{subject} ({symbol}) recent business developments, competitive position, "
+            f"and key risks — cite sources"
+        )
+        # A failed run raises (a VendorError, via the transport): web research
+        # is optional to the caller, which decides that, but "the actor could
+        # not be run" must not be indistinguishable from "it found nothing".
+        items = self._run_actor(
+            self.RESEARCH_ACTOR,
+            {
+                "query": query,
+                "maxResults": 3,
+                "outputFormats": ["markdown"],
+                "scrapingTool": "raw-http",  # fast path; no browser needed for article text
+            },
+        )
+
+        return self._claims_from_items(symbol, self._normalize_research(items), "apify.web")
+
+    @staticmethod
+    def _normalize_research(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """rag-web-browser yields one item per fetched page; reshape into the
+        {answer, sources} form the claim extractor already validates, so the
+        evidence discipline (no source -> no claim) is unchanged."""
+        out: list[dict[str, Any]] = []
+        for item in items:
+            metadata = item.get("metadata") or {}
+            url = metadata.get("url") or item.get("url") or ""
+            text = item.get("markdown") or item.get("text") or ""
+            if not url or not text:
+                continue
+            out.append({
+                "answer": text[:1500],  # lead content; enough for claim-sized statements
+                "sources": [{"url": url, "title": metadata.get("title") or ""}],
+            })
+        return out
+
+    def _claims_from_items(self, symbol: str, items: list[dict[str, Any]], provider: str) -> KnowledgeBundle:
+        bundle = KnowledgeBundle()
+        for item in items[:3]:
+            answer = str(item.get("answer") or item.get("text") or item.get("content") or "")
+            raw_sources = item.get("sources") or item.get("citations") or item.get("links") or []
+            sources: list[ResearchSource] = []
+            for entry in raw_sources[:6]:
+                url = entry.get("url") if isinstance(entry, dict) else str(entry)
+                if not url or not str(url).startswith("http"):
+                    continue
+                host = _host(str(url))
+                if not host or host in LOW_QUALITY_HOSTS:
+                    continue
+                title = (entry.get("title") if isinstance(entry, dict) else None) or host
+                sources.append(ResearchSource(
+                    provider=provider, title=str(title), url=str(url), document_type="web",
+                ))
+            # The rule that keeps hallucinated content out: no source, no claim.
+            if not sources:
+                continue
+            for index, statement in enumerate(_sentences(answer)):
+                evidence = [
+                    ResearchEvidence(
+                        id=f"evidence:{provider}:{symbol}:{index}:{n}",
+                        source=source, excerpt=statement, doc_section="web research",
+                    )
+                    for n, source in enumerate(sources[:3])
+                ]
+                bundle.claims.append(ResearchClaim(
+                    id=f"claim:{provider}:{symbol}:{index}",
+                    statement=statement,
+                    evidence=evidence,
+                    confidence=WEB_CLAIM_CONFIDENCE,
+                ))
+        return bundle
+
+    # ── search: general web research for a themed question ───────────────────
+    def search(self, query: str, limit: int = 6) -> list[dict[str, str]]:
+        """Google results as structured rows (title/url/snippet)."""
+        if not self.available:
+            return []
+        items = self._run_actor(
+            self.GOOGLE_SEARCH_ACTOR,
+            {"queries": query, "maxPagesPerQuery": 1, "resultsPerPage": limit},
+            timeout_secs=60,
+        )
+        out: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for result in (item.get("organicResults") or [])[:limit]:
+                if not isinstance(result, dict):
+                    continue
+                url = str(result.get("url") or "")
+                if not url.startswith("http"):
+                    continue
+                out.append({
+                    "title": str(result.get("title") or ""),
+                    "url": url,
+                    "snippet": str(result.get("description") or ""),
+                    "host": _host(url),
+                })
+        return out[:limit]

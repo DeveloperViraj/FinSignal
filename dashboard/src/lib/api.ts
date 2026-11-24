@@ -9,6 +9,7 @@ import { parsePercentString } from './format'
 import type {
   AiAnalysis,
   Analysis,
+  ReportDepth,
   FactorImpact,
   FactorImpacts,
   Headline,
@@ -126,8 +127,22 @@ export function normalizeAi(raw: RawAiAnalysis | null | undefined): AiAnalysis |
     factorImpacts,
     generated: raw.generated ?? false,
     model: raw.model ?? null,
+    provider: raw.provider ?? null,
+    pipelineMode: raw.pipeline_mode ?? null,
+    analystBriefUsed: raw.analyst_brief_used ?? false,
+    evidenceLinks: raw.evidence_links ?? {},
+    evidence: raw.evidence ?? [],
+    cached: Boolean(raw.cached || raw.shared),
+    validation: raw.validation
+      ? { status: raw.validation.status ?? null, droppedSections: raw.validation.dropped_sections ?? [] }
+      : null,
+    snapshotId: raw.snapshot_id ?? null,
+    depth: raw.depth === 'beginner' || raw.depth === 'intermediate' || raw.depth === 'advanced' ? raw.depth : null,
   }
 }
+
+const finiteOrNull = (v: number | null | undefined): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null
 
 function normalizeQuant(raw: RawQuant | null | undefined): QuantCard | null {
   if (!raw || typeof raw.raw_score !== 'number') return null
@@ -138,9 +153,11 @@ function normalizeQuant(raw: RawQuant | null | undefined): QuantCard | null {
     rawVerdict: raw.raw_verdict ?? raw.verdict ?? 'Hold',
     confidence: raw.confidence ?? 50,
     confidenceLosses: raw.confidence_losses ?? [],
-    uncertainty: raw.uncertainty ?? 0,
+    /* `?? null`: an analysis saved before these were recorded has no
+       uncertainty, and "0% uncertain" is a claim of certainty it never made. */
+    uncertainty: finiteOrNull(raw.uncertainty),
     uncertaintyComponents: raw.uncertainty_components ?? {},
-    conflictIndex: raw.conflict_index ?? 0,
+    conflictIndex: finiteOrNull(raw.conflict_index),
     momentumScore: raw.momentum_score ?? null,
     fundamentalScore: raw.fundamental_score ?? null,
     qualityScore: raw.quality_score ?? null,
@@ -183,10 +200,14 @@ export function normalizeAnalysis(raw: RawResearchResponse): Analysis {
     signalScore: VERDICT_SCORE[riskAdjusted],
 
     engineConfidence: typeof raw.confidence === 'number' ? raw.confidence : null,
+    confidenceBreakdown: raw.confidence_breakdown ?? [],
+    elapsedSeconds: typeof raw.elapsed_seconds === 'number' ? raw.elapsed_seconds : null,
+    disclaimer: raw.disclaimer ?? null,
     riskLevel: asRiskLevel(raw.risk_level),
     rationale: raw.rationale ?? null,
     quant: normalizeQuant(raw.quant),
     ai: normalizeAi(raw.ai),
+    decisionQuality: raw.decision_quality ?? null,
 
     /* `?? null`, never `?? 0`. A real zero from the API survives as zero —
        nullish coalescing only fires on null and undefined — while a field the
@@ -213,6 +234,13 @@ export function normalizeAnalysis(raw: RawResearchResponse): Analysis {
     sentimentScore: s?.average_score ?? null,
     sentimentLabel: s?.dominant_label ?? null,
     headlineCount: s?.headline_count ?? 0,
+    // Three different reasons for an empty list, which the count alone cannot
+    // tell apart: never asked (no sentiment block at all), asked and nothing
+    // there, asked and nobody could answer.
+    newsStatus: s === null
+      ? 'not_requested'
+      : s.status ?? (s.error ? 'unavailable' : s.headline_count ? 'ok' : 'no_headlines'),
+    newsSourcesFailed: s?.sources_failed ?? [],
     headlines: (s?.headlines ?? []).map((h) => ({
       title: h.title ?? '',
       score: h.score ?? 0,
@@ -339,12 +367,16 @@ export async function coalesce<T>(
   }
 }
 
-export async function fetchAnalysis(ticker: string, fast: boolean): Promise<RawResearchResponse> {
-  return coalesce(inFlightAnalyses, `${ticker}:${fast}`, async () => {
+export async function fetchAnalysis(ticker: string, fast: boolean, depth: ReportDepth = 'intermediate'): Promise<RawResearchResponse> {
+  return coalesce(inFlightAnalyses, `${ticker}:${fast}:${depth}`, async () => {
     // The Clerk token lets the backend persist this run to the user's history
     // automatically; without it the analysis still works, just unrecorded.
     const { authFetch } = await import('./persistence')
-    const res = await authFetch(`/api/research/${encodeURIComponent(ticker)}${fast ? '?fast=true' : ''}`)
+    const params = new URLSearchParams()
+    if (fast) params.set('fast', 'true')
+    if (depth !== 'intermediate') params.set('depth', depth)
+    const query = params.toString()
+    const res = await authFetch(`/api/research/${encodeURIComponent(ticker)}${query ? `?${query}` : ''}`)
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new ApiError(body?.detail || `The analysis service returned an error (${res.status}).`, res.status)
@@ -355,7 +387,13 @@ export async function fetchAnalysis(ticker: string, fast: boolean): Promise<RawR
 
 export async function fetchChart(ticker: string, period: string): Promise<RawChartResponse> {
   const res = await fetch(`/api/chart/${encodeURIComponent(ticker)}?period=${encodeURIComponent(period)}`)
-  if (!res.ok) return { prices: [] }
+  // A failed request is a failure, not an empty history. This returned
+  // `{ prices: [] }` here, which `normalizeChartSeries` labels "empty" - "no
+  // sessions returned for this security" - for a 502 from a cold backend or a
+  // 401 from a lapsed session. The route's own four outcomes (ok, stale, empty,
+  // unavailable) arrive in a 200 body and are kept; only a response that is not
+  // one of them throws.
+  if (!res.ok) throw new ApiError(`The price service returned ${res.status}.`, res.status)
   return res.json()
 }
 
@@ -396,4 +434,3 @@ export async function fetchMacroClient(): Promise<Macro | null> {
   })()
   return macroInflight
 }
-

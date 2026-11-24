@@ -1,0 +1,223 @@
+'use client'
+
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+
+import Skeleton from '@/components/ui/Skeleton'
+import { Status } from '@/components/system'
+import { EDGE_LABELS, fetchKnowledge, unavailableSources, type CompanyKnowledge } from '@/lib/knowledge'
+import { typographicMinusInText } from '@/lib/format'
+
+const TONE_COLOR = { pos: 'var(--e-pos)', neg: 'var(--e-neg)', neutral: 'var(--ink-muted)' } as const
+
+/**
+ * Company ecosystem — leadership, corporate structure, products, industry
+ * and the SEC-grounded filing timeline. Every row comes from the merged
+ * knowledge graph (SEC + Wikidata, deduplicated backend-side); this
+ * component renders and cites, it computes nothing.
+ *
+ * Loads independently of the report so a slow encyclopedic lookup never
+ * delays the verdict, and renders nothing at all when no provider had
+ * anything to say.
+ */
+export default function CompanyEcosystem({ ticker }: { ticker: string }) {
+  // Settled result tagged with the ticker it describes. Loading is derived
+  // from that tag rather than flipped at the top of the effect: no
+  // synchronous setState during an effect body, and a slow response for a
+  // previous ticker cannot overwrite the current one.
+  const [settled, setSettled] = useState<{ ticker: string; data: CompanyKnowledge | null } | null>(null)
+  const state = settled === null || settled.ticker !== ticker
+    ? ({ status: 'loading' } as const)
+    : ({ status: 'ready', data: settled.data } as const)
+
+  useEffect(() => {
+    let alive = true
+    fetchKnowledge(ticker).then((data) => {
+      if (alive) setSettled({ ticker, data })
+    })
+    return () => {
+      alive = false
+    }
+  }, [ticker])
+
+  if (state.status === 'loading') {
+    return (
+      <section aria-label="Company ecosystem" className="panel panel--pad">
+        <h3 className="h-panel" style={{ marginBottom: 14 }}>Ecosystem</h3>
+        <Skeleton height={120} />
+      </section>
+    )
+  }
+
+  const data = state.data
+  // A failed request and a source outage are not "nothing to say". They used to
+  // return null here, so the panel simply was not there and the reader could not
+  // tell an unknown company from a lookup that never ran.
+  if (!data || data.status === 'unavailable') {
+    return (
+      <section aria-label="Company ecosystem" className="panel panel--pad">
+        <h3 className="h-panel" style={{ marginBottom: 8 }}>Ecosystem</h3>
+        <p className="sys-state__detail" role="status">
+          <Status state="unavailable" label="not loaded" />{' '}
+          The ecosystem sources did not answer, so nothing is shown for {ticker}. This is not a finding that it has none; reload to try again.
+        </p>
+      </section>
+    )
+  }
+  const down = unavailableSources(data)
+  if (data.ecosystem.length === 0 && data.timeline.length === 0 && data.findings.length === 0 && data.claims.length === 0) {
+    return null
+  }
+
+  return (
+    <section aria-label="Company ecosystem" className="panel panel--pad">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
+        <h3 className="h-panel">Ecosystem</h3>
+ <span className="num u-meta">
+          {data.graph.nodes} entities · {data.graph.edges} relationships
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', color: 'var(--ink-faint)' }}>
+          {data.graph.providers.join(' · ') || 'no sources'}
+        </span>
+      </div>
+      {down.length > 0 && (
+        <p className="sys-state__detail" role="status" style={{ marginBottom: 12 }}>
+          <Status state="warning" label="partial" />{' '}
+          {down.join(' and ')} did not answer, so this view may be missing relationships it would otherwise show.
+        </p>
+      )}
+
+      {data.ecosystem.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: data.findings.length ? 18 : 0 }}>
+          {data.ecosystem.map((group) => (
+            <div key={group.key}>
+              <p className="sys-label" style={{ marginBottom: 8 }}>{group.label}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {group.members.map((member) => {
+                  const roles = member.edges.map((edge) => EDGE_LABELS[edge] ?? edge).join(' · ')
+                  const content = (
+                    <>
+                      {member.label}
+                      <span className="sys-label" style={{ color: 'var(--ink-faint)' }}>{roles}</span>
+                    </>
+                  )
+                  return member.route ? (
+                    <Link
+                      key={member.id}
+                      href={member.route}
+                      className="sys-btn sys-btn--ghost sys-btn--xs"
+                      style={{ border: '1px solid var(--rule)' }}
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <span
+                      key={member.id}
+                      className="sys-btn sys-btn--ghost sys-btn--xs"
+                      style={{ border: '1px solid var(--rule)', cursor: 'default' }}
+                    >
+                      {content}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.findings.length > 0 && (
+        <details className="disclosure">
+          <summary style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--ink-muted)' }}>
+            Reported financials from SEC filings ({data.findings.length})
+          </summary>
+          <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.findings.map((finding) => (
+              <li key={finding.id} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-body)', lineHeight: 1.55 }}>
+                <span
+                  aria-hidden="true"
+                  style={{ flexShrink: 0, marginTop: 8, width: 6, height: 6, borderRadius: 1, background: TONE_COLOR[finding.tone] }}
+                />
+                <span>
+                  <span style={{ color: 'var(--ink)' }}>{typographicMinusInText(finding.text)}</span>
+                  {finding.evidence[0]?.source.url && (
+                    <>
+                      {' '}
+                      <a
+                        href={finding.evidence[0].source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 'var(--t-meta)', color: 'var(--accent-strong)' }}
+                      >
+                        source
+                      </a>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {data.claims.length > 0 && (
+        <details className="disclosure" style={{ marginTop: 10 }}>
+          <summary style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--ink-muted)' }}>
+            Web research ({data.claims.length}) — corroborating context, every claim sourced
+          </summary>
+          <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {data.claims.map((claim) => (
+              <li key={claim.id} style={{ fontSize: 'var(--t-body)', lineHeight: 1.55, color: 'var(--ink-muted)' }}>
+                {claim.statement}
+                <span style={{ display: 'block', marginTop: 4 }}>
+                  {claim.evidence.slice(0, 3).map((evidence) =>
+                    evidence.source.url ? (
+                      <a
+                        key={evidence.id}
+                        href={evidence.source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 'var(--t-meta)', color: 'var(--accent-strong)', marginRight: 10 }}
+                      >
+                        {evidence.source.title}
+                      </a>
+                    ) : null,
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {data.timeline.length > 0 && (
+        <details className="disclosure" style={{ marginTop: 10 }}>
+          <summary style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--ink-muted)' }}>
+            Filing timeline ({data.timeline.length})
+          </summary>
+          <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {data.timeline.map((event) => (
+              <li key={event.id} style={{ display: 'flex', gap: 12, fontSize: 'var(--t-body)', alignItems: 'baseline' }}>
+                <span className="num" style={{ fontSize: 'var(--t-small)', color: 'var(--ink-faint)', width: 84, flexShrink: 0 }}>
+                  {event.date}
+                </span>
+                <span style={{ color: 'var(--ink)', fontWeight: 600, width: 110, flexShrink: 0 }}>{event.title}</span>
+                <span style={{ color: 'var(--ink-muted)', flex: 1, minWidth: 0 }}>{event.detail}</span>
+                {event.source?.url && (
+                  <a
+                    href={event.source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 'var(--t-meta)', color: 'var(--accent-strong)', flexShrink: 0 }}
+                  >
+                    view
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  )
+}

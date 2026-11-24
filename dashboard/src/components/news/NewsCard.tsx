@@ -29,7 +29,7 @@ function Thumb({ src, alt, lead }: { src: string; alt: string; lead?: boolean })
         aspectRatio: lead ? '16 / 9' : '4 / 3',
         borderRadius: 'var(--r-md)',
         overflow: 'hidden',
-        background: 'var(--surface-2)',
+        background: 'var(--p-raised)',
         order: lead ? -1 : 1,
       }}
     >
@@ -51,7 +51,7 @@ function Thumb({ src, alt, lead }: { src: string; alt: string; lead?: boolean })
 
 export default function NewsCard({ item, lead = false }: NewsCardProps) {
   return (
-    <article style={{ borderBottom: '1px solid var(--line)' }}>
+    <article style={{ borderBottom: '1px solid var(--rule)' }}>
       <a
         href={item.url}
         target="_blank"
@@ -68,15 +68,17 @@ export default function NewsCard({ item, lead = false }: NewsCardProps) {
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 8, flexWrap: 'wrap' }}>
-            <span className="label" style={{ color: 'var(--accent)' }}>
+            <span className="sys-label" style={{ color: 'var(--accent)' }}>
               {item.source}
             </span>
-            <span className="label" style={{ color: 'var(--faint)', textTransform: 'none', letterSpacing: 0 }}>
+            <span className="sys-label" style={{ color: 'var(--ink-faint)', textTransform: 'none', letterSpacing: 0 }}>
               {CATEGORY_LABEL[item.category]}
             </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--faint)' }}>
-              <time dateTime={item.publishedAt}>{timeAgo(item.publishedAt)}</time>
-            </span>
+            {item.publishedAt ? (
+              <span style={{ fontSize: 'var(--t-small)', color: 'var(--ink-faint)' }}>
+                <time dateTime={item.publishedAt}>{timeAgo(item.publishedAt)}</time>
+              </span>
+            ) : null}
           </div>
 
           <h3
@@ -85,8 +87,8 @@ export default function NewsCard({ item, lead = false }: NewsCardProps) {
               fontSize: lead ? 'clamp(1.5rem, 3vw, 2rem)' : '1.125rem',
               fontWeight: 500,
               lineHeight: lead ? 1.2 : 1.35,
-              letterSpacing: '-0.008em',
-              color: 'var(--text)',
+              letterSpacing: '0',
+              color: 'var(--ink)',
               marginBottom: item.summary ? 8 : 0,
             }}
           >
@@ -98,7 +100,7 @@ export default function NewsCard({ item, lead = false }: NewsCardProps) {
               style={{
                 fontSize: lead ? '0.9688rem' : '0.875rem',
                 lineHeight: 1.6,
-                color: 'var(--muted)',
+                color: 'var(--ink-muted)',
                 display: '-webkit-box',
                 WebkitLineClamp: lead ? 3 : 2,
                 WebkitBoxOrient: 'vertical',
@@ -110,7 +112,7 @@ export default function NewsCard({ item, lead = false }: NewsCardProps) {
           )}
 
           {item.author && (
-            <p style={{ fontSize: '0.75rem', color: 'var(--faint)', marginTop: 8 }}>By {item.author}</p>
+            <p style={{ fontSize: 'var(--t-small)', color: 'var(--ink-faint)', marginTop: 8 }}>By {item.author}</p>
           )}
         </div>
 

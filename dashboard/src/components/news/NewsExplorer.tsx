@@ -20,7 +20,7 @@ const TABS: Array<{ value: CategoryFilter; label: string }> = [
 function ListSkeleton() {
   return (
     <div aria-hidden="true">
-      <div style={{ paddingBottom: 28, borderBottom: '1px solid var(--line)' }}>
+      <div style={{ paddingBottom: 28, borderBottom: '1px solid var(--rule)' }}>
         <Skeleton height={200} style={{ marginBottom: 18 }} />
         <Skeleton height={14} width={140} style={{ marginBottom: 10 }} />
         <Skeleton height={26} width="70%" />
@@ -32,7 +32,7 @@ function ListSkeleton() {
             display: 'flex',
             gap: 20,
             padding: '20px 0',
-            borderBottom: '1px solid var(--line)',
+            borderBottom: '1px solid var(--rule)',
           }}
         >
           <div style={{ flex: 1 }}>
@@ -159,7 +159,7 @@ export default function NewsExplorer() {
           marginBottom: 8,
         }}
       >
-        <div className="seg" role="group" aria-label="Filter by category" style={{ flexWrap: 'wrap' }}>
+        <div className="seg" role="group" aria-label="Filter by category" style={{ overflowX: 'auto', maxWidth: '100%' }}>
           {TABS.map((tab) => (
             <button
               key={tab.value}
@@ -173,18 +173,17 @@ export default function NewsExplorer() {
           ))}
         </div>
 
-        <div style={{ position: 'relative', width: 'min(280px, 100%)' }}>
+        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 320, minWidth: 0 }}>
           <label htmlFor="news-search" className="visually-hidden">
             Search news
           </label>
           <input
             id="news-search"
             type="search"
-            className="input"
+            className="sys-input sys-input--lg sys-input--block"
             placeholder="Search headlines…"
             value={inputValue}
             onChange={(e) => onSearchChange(e.target.value)}
-            style={{ height: 36, fontSize: '0.875rem' }}
           />
         </div>
       </div>
@@ -198,16 +197,16 @@ export default function NewsExplorer() {
           gap: 12,
           flexWrap: 'wrap',
           padding: '10px 0 14px',
-          borderBottom: '1px solid var(--line-strong)',
+          borderBottom: '1px solid var(--rule-strong)',
           marginBottom: 4,
         }}
       >
-        <span style={{ fontSize: '0.8125rem', color: 'var(--muted)' }}>
+        <span style={{ fontSize: 'var(--t-body)', color: 'var(--ink-muted)' }}>
           {status === 'loading' && 'Loading stories…'}
           {status === 'ready' && data && (
             <>
               {fetching ? 'Updating… · ' : ''}
-              {data.total.toLocaleString()} {data.total === 1 ? 'story' : 'stories'}
+              {data.total.toLocaleString('en-US')} {data.total === 1 ? 'story' : 'stories'}
               {hasFilters && (
                 <>
                   {' · '}
@@ -220,7 +219,7 @@ export default function NewsExplorer() {
                       padding: 0,
                       color: 'var(--accent)',
                       cursor: 'pointer',
-                      fontSize: '0.8125rem',
+                      fontSize: 'var(--t-body)',
                       textDecoration: 'underline',
                       textUnderlineOffset: 3,
                     }}
@@ -234,7 +233,7 @@ export default function NewsExplorer() {
           {status === 'error' && 'Could not load stories.'}
         </span>
         {status === 'ready' && data && (
-          <span style={{ fontSize: '0.8125rem', color: 'var(--faint)' }}>
+          <span style={{ fontSize: 'var(--t-body)', color: 'var(--ink-faint)' }}>
             Updated {timeAgo(data.updatedAt)}
           </span>
         )}
@@ -248,7 +247,7 @@ export default function NewsExplorer() {
           title="The news feed is unreachable"
           description="Source feeds may be briefly unavailable. This usually resolves in under a minute."
           action={
-            <button type="button" className="btn btn--secondary btn--sm" onClick={retry}>
+            <button type="button" className="sys-btn" onClick={retry}>
               Try again
             </button>
           }
@@ -265,7 +264,7 @@ export default function NewsExplorer() {
           }
           action={
             hasFilters ? (
-              <button type="button" className="btn btn--secondary btn--sm" onClick={clearFilters}>
+              <button type="button" className="sys-btn" onClick={clearFilters}>
                 Clear filters
               </button>
             ) : undefined
@@ -295,18 +294,18 @@ export default function NewsExplorer() {
             >
               <button
                 type="button"
-                className="btn btn--secondary btn--sm"
+                className="sys-btn"
                 disabled={page <= 1}
                 onClick={() => goToPage(page - 1)}
               >
                 ← Newer
               </button>
-              <span className="num" style={{ fontSize: '0.8125rem', color: 'var(--muted)' }}>
+              <span className="num" style={{ fontSize: 'var(--t-body)', color: 'var(--ink-muted)' }}>
                 Page {data.page} of {data.totalPages}
               </span>
               <button
                 type="button"
-                className="btn btn--secondary btn--sm"
+                className="sys-btn"
                 disabled={page >= data.totalPages}
                 onClick={() => goToPage(page + 1)}
               >

@@ -1,408 +1,309 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import MacroStrip from '@/components/marketing/MacroStrip'
-import NewsPreview from '@/components/marketing/NewsPreview'
-import TerminalPreview from '@/components/marketing/TerminalPreview'
-import Reveal from '@/components/ui/Reveal'
+
+import { DeterministicConclusion } from '@/components/company/Conclusion'
+import { FAMILY_LABEL, FAMILY_ORDER, factorName } from '@/components/company/derive'
+import Atmosphere from '@/components/marketing/Atmosphere'
+import LiveMacro from '@/components/marketing/LiveMacro'
+import PipelineFigure from '@/components/marketing/PipelineFigure'
+import ProductTour from '@/components/marketing/ProductTour'
+import RunPreview from '@/components/marketing/RunPreview'
+import Icon, { type IconName } from '@/components/shell/Icon'
+import { RECORDED_LABEL, recordedAnalysis as run } from '@/components/marketing/recordedRun'
+import MarketNews from '@/components/terminal/home/MarketNews'
 
 export const metadata: Metadata = {
-  // Inherits the root default title; template would double the brand here.
+  // Inherits the root default title; the template would double the brand here.
   description:
-    'Five weighted signals — momentum, risk-adjusted return, valuation, news sentiment and the macro cycle — combined into one risk-adjusted verdict per stock.',
+    'Equity research you can audit: a deterministic engine sets every signal from evidence traced to its provider, and an explanation layer narrates it with citations.',
   alternates: { canonical: '/' },
 }
 
-const FACTORS = [
+/** What each family reads, in the words the methodology uses. */
+const FAMILY_READS: Record<string, string> = {
+  momentum: 'Trend persistence across one to twelve months, confirmed by volume and measured against the market.',
+  fundamental: 'What the price pays for earnings, against the sector and the street, and the drift after results.',
+  quality: 'How profitably assets are used, and whether the share count and balance sheet are being diluted.',
+  news: 'The tone of recent company headlines, weighted up around earnings.',
+  reversal: 'Short-term overextension that tends to mean-revert, as a small contrarian counterweight.',
+}
+
+/* The claims the product is built on, in the ribbon under the hero. Words,
+   not figures: nothing here could be mistaken for a live value. */
+const CLAIMS = [
+  'Deterministic signals',
+  'Every number traced to its source',
+  'Disagreement shown, never averaged',
+  'Unknown is not zero',
+  'AI explains — it never decides',
+]
+
+/* What the terminal holds beyond one company's report, in the words of its own
+   destinations (lib/destinations.ts). `go` is the terminal's G-then-key jump. */
+const FEATURES: Array<{ icon: IconName; title: string; text: string; go: string; wide?: boolean; viz?: 'rank' | 'lab' }> = [
   {
-    factor: 'RSI-14',
-    measures: 'Overbought and oversold pressure over the last 14 sessions',
-    reads: 'Below 30 counts bullish; above 70 counts bearish',
-    weight: '±2',
+    icon: 'screen',
+    title: 'Screener',
+    text: 'Rank and filter the covered universe on the engine’s own factor families, with the evidence behind every row one click away.',
+    go: 'S',
+    wide: true,
+    viz: 'rank',
   },
+  { icon: 'list', title: 'Watchlists', text: 'Tracked securities with live prices, quote freshness, notes, tags and research context.', go: 'W' },
+  { icon: 'alert', title: 'Alerts', text: 'Price and filing alerts with an inbox, so a move or a new 10-K finds you.', go: 'A' },
+  { icon: 'paper', title: 'Paper trading', text: 'A simulated account to test an idea end to end. Orders, fills and P&L — no real money.', go: 'T' },
+  { icon: 'graph', title: 'Knowledge graph', text: 'Entities and relationships around one company, and the path between any two.', go: 'K' },
   {
-    factor: 'Sharpe ratio',
-    measures: 'Return earned per unit of volatility over the trailing year',
-    reads: 'Above 1.0 counts bullish; below 0 counts bearish',
-    weight: '±2',
+    icon: 'flask',
+    title: 'Quant & factor labs',
+    text: 'The full research record — preregistered experiments, void runs included — and which factors survive the overlap correction.',
+    go: 'Q',
+    wide: true,
+    viz: 'lab',
   },
-  {
-    factor: '21-day return',
-    measures: 'Near-term momentum, one trading month',
-    reads: 'Sustained gains count bullish; sustained losses bearish',
-    weight: '±2',
-  },
-  {
-    factor: 'MACD crossover',
-    measures: 'Trend inflection between fast and slow moving averages',
-    reads: 'Bullish or bearish cross, when present',
-    weight: '±1',
-  },
-  {
-    factor: 'Analyst target',
-    measures: 'Distance to the consensus street price target',
-    reads: 'Meaningful upside counts bullish; targets below price bearish',
-    weight: '±2',
-  },
+  { icon: 'provenance', title: 'Provenance', text: 'The chain from data to decision: how one analysis executed, claim by claim.', go: 'V' },
 ]
 
 const FAQ = [
   {
+    q: 'Does an AI decide the signal?',
+    a: 'No. The signal, confidence and risk level come from a deterministic engine — the same inputs always give the same output. A language model writes the explanation afterwards; it must cite the evidence items it uses, and any section that cites nothing, or quotes a number the evidence does not contain, is withheld. The page says which sections were withheld and which provider and model wrote the rest.',
+  },
+  {
     q: 'Where does the data come from?',
-    a: 'Macro series come from FRED (the St. Louis Fed): the 10Y–2Y Treasury spread, CPI inflation and the federal funds rate. Prices and technicals come from Yahoo Finance, fundamentals and MACD from Alpha Vantage, and headlines from financial news feeds. Every analysis states what it used.',
+    a: 'Prices, fundamentals and news come from the market-data vendors configured for the deployment; filings come from SEC EDGAR and macro series from FRED. Every run lists which providers answered, which failed and which inputs are missing. A missing input is never filled with an estimate, and a single source is never presented as agreement.',
   },
   {
     q: 'Is this investment advice?',
-    a: 'No. FinSignal is a research and education tool. It compresses public data into a structured, repeatable readout — it does not know your situation, and a verdict is a summary of signals, not a recommendation. Decisions and their consequences remain yours.',
+    a: 'No. FinSignal is a research and education tool. It summarizes public data into a structured, repeatable readout; it does not know your situation, and a signal is a summary of evidence, not a recommendation. Decisions and their consequences remain yours.',
   },
   {
-    q: 'How is the verdict computed?',
-    a: 'Five factors each contribute a weighted score. The sum maps to a raw signal from Strong Sell to Strong Buy. That signal is then dampened by the Systemic Risk Multiplier — a macro-regime reading built from FRED data — so a bullish setup in a fragile macro environment gets pulled toward caution. Both the raw and the risk-adjusted signal are always shown.',
-  },
-  {
-    q: 'Is Pro a subscription?',
-    a: 'No. Pro is a single ₹100 payment through Razorpay that unlocks the paid features on your account. There is no recurring charge, no billing period and nothing to cancel — the payment happens once and does not repeat.',
+    q: 'Does it cost anything?',
+    a: 'No. Every feature is free: no daily limit, no paid tier and no card. The data comes from the providers’ free plans, so when one of them hits its own rate limit the run says that source did not answer.',
   },
 ]
 
 export default function LandingPage() {
+  const q = run.quant
+  const byFamily = (family: string) => (q?.factors ?? []).filter((f) => f.family === family).map((f) => factorName(f.name))
+
   return (
-    <>
-      {/* ---------- Hero ---------- */}
-      <section style={{ padding: 'clamp(64px, 10vw, 128px) 0 clamp(48px, 7vw, 88px)' }}>
-        <div className="container hero-grid">
-          <div>
-            <p className="eyebrow" style={{ marginBottom: 20 }}>
-              Equity research terminal
+    <div className="lp">
+      {/* ── hero ─────────────────────────────────────────────────────── */}
+      <section className="lp-hero">
+        <div className="lp-container lp-hero__grid">
+          <div className="lp-hero__copy">
+            <p className="lp-eyebrow">Evidence-grounded equity research</p>
+            <h1 className="lp-title">Research you can audit, <em>line by line.</em></h1>
+            <p className="lp-lede">
+              A deterministic engine sets every signal from evidence it can trace to a provider.
+              Disagreements and gaps stay visible. An explanation layer then narrates the result — and
+              has to cite the evidence for every sentence it keeps.
             </p>
-            <h1 className="display" style={{ marginBottom: 24 }}>
-              Five signals.
-              <br />
-              <em>One verdict.</em>
-            </h1>
-            <p className="lede" style={{ marginBottom: 36 }}>
-              FinSignal scores a stock across momentum, risk-adjusted return,
-              trend, street expectations and news sentiment — then dampens the
-              result by the state of the macro cycle. What you get is a single,
-              explainable verdict and every number behind it.
-            </p>
-            <div className="hero-cta" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Link href="/start" prefetch={false} className="btn btn--primary btn--lg">
-                Open the terminal
+            <div className="lp-cta">
+              <Link href="/start" prefetch={false} className="lp-btn lp-btn--primary">
+                Open the terminal<span className="lp-btn__arrow" aria-hidden>→</span>
               </Link>
-              <Link href="/#methodology" className="btn btn--secondary btn--lg">
-                Read the methodology
-              </Link>
+              <Link href="/#how" className="lp-btn">How a signal is made</Link>
             </div>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--faint)', marginTop: 18 }}>
-              Free tier: five analyses a day. No card required.
-            </p>
+            <ul className="lp-proof" aria-label="What every run guarantees">
+              <li>Deterministic engine</li>
+              <li>Every figure sourced</li>
+              <li>AI explains, never decides</li>
+            </ul>
+            <p className="lp-fine">Free, with no daily limit and no card.</p>
           </div>
+          <div className="lp-stage">
+            <RunPreview />
+          </div>
+        </div>
+      </section>
 
-          {/* Engine facts — quiet, factual, no illustration */}
-          <aside aria-label="What the engine reads" className="hero-aside">
-            <p className="label" style={{ marginBottom: 6 }}>
-              Each analysis reads
+      <section className="lp-ribbon" aria-label="Principles">
+        {/* A marquee: four copies end to end, so the track's two halves are
+            identical and the loop has no seam. Only the first copy is read by
+            assistive technology; the rest are decoration. */}
+        <div className="lp-ribbon__track">
+          {[0, 1, 2, 3].map((copy) => (
+            <ul key={copy} className="lp-ribbon__set" aria-hidden={copy > 0 ? true : undefined}>
+              {CLAIMS.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+          ))}
+        </div>
+      </section>
+
+      <LiveMacro />
+
+      {/* ── features ─────────────────────────────────────────────────── */}
+      <section id="features" className="lp-section">
+        <div className="lp-container">
+          <header className="lp-section__head" data-reveal>
+            <p className="lp-eyebrow">One terminal</p>
+            <h2 className="lp-h2">From a first look to a <em>tracked position</em></h2>
+            <p className="lp-section__lede">
+              Research, tracking and practice share one workspace and one record, and every screen is a keystroke
+              away: press <kbd className="sys-kbd">G</kbd> then a letter, or <kbd className="sys-kbd">Ctrl K</kbd> to search.
             </p>
-            <dl style={{ margin: 0 }}>
-              {[
-                ['Momentum', 'RSI-14 and 21-day return'],
-                ['Risk', 'Sharpe, Sortino, drawdown, volatility'],
-                ['Trend', 'MACD crossover state'],
-                ['The street', 'Consensus target vs. price'],
-                ['The tape', 'Headline sentiment, scored'],
-                ['The regime', 'FRED macro → risk multiplier'],
-              ].map(([term, detail]) => (
-                <div
-                  key={term}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 16,
-                    padding: '11px 0',
-                    borderBottom: '1px solid var(--line)',
-                  }}
-                >
-                  <dt style={{ fontSize: '0.875rem', fontWeight: 560, whiteSpace: 'nowrap' }}>{term}</dt>
-                  <dd style={{ margin: 0, fontSize: '0.875rem', color: 'var(--muted)', textAlign: 'right' }}>
-                    {detail}
-                  </dd>
+          </header>
+          <ul className="lp-bento" data-reveal>
+            {FEATURES.map((f) => (
+              <li key={f.title} className={`lp-bento__card${f.wide ? ' lp-bento__card--wide' : ''}`}>
+                <span className="lp-bento__icon" aria-hidden><Icon name={f.icon} size={16} /></span>
+                <h3 className="lp-bento__title">{f.title}</h3>
+                <p className="lp-bento__text">{f.text}</p>
+                {f.viz ? <BentoViz kind={f.viz} /> : null}
+                <span className="lp-bento__go" aria-hidden><kbd className="sys-kbd">G</kbd><kbd className="sys-kbd">{f.go}</kbd></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ── how ──────────────────────────────────────────────────────── */}
+      <section id="how" className="lp-section">
+        <div className="lp-container">
+          <header className="lp-section__head" data-reveal>
+            <p className="lp-eyebrow">How a run is assembled</p>
+            <h2 className="lp-h2">The signal is fixed before a word is written</h2>
+            <p className="lp-section__lede">
+              Four stages, always in this order. The explanation layer reads the engine’s output; nothing
+              it writes can change it.
+            </p>
+          </header>
+          <PipelineFigure />
+        </div>
+      </section>
+
+      {/* ── product ──────────────────────────────────────────────────── */}
+      <section id="product" className="lp-section lp-section--panel">
+        <div className="lp-container">
+          <header className="lp-section__head" data-reveal>
+            <p className="lp-eyebrow">The company workspace</p>
+            <h2 className="lp-h2">One company, every layer of the evidence</h2>
+            <p className="lp-section__lede">
+              These are the terminal’s own panels, rendered from one recorded production run — not a mock-up.
+            </p>
+          </header>
+          <ProductTour />
+        </div>
+      </section>
+
+      {/* ── methodology ──────────────────────────────────────────────── */}
+      <section id="methodology" className="lp-section">
+        <div className="lp-container lp-method">
+          <header className="lp-section__head" data-reveal>
+            <p className="lp-eyebrow">Methodology · {q?.modelVersion}</p>
+            <h2 className="lp-h2">Five families, one composite, a gated sleeve</h2>
+            <p className="lp-section__lede">
+              Each factor is normalized with outlier-resistant statistics against the company’s own history
+              and volatility, then weighted into its family; the families are weighted into one composite.
+              Macro stress scales only the momentum sleeve — value, quality and news are never
+              macro-suppressed — and in high-volatility regimes momentum is halved in favor of reversal.
+            </p>
+          </header>
+
+          <div className="lp-method__grid" data-reveal>
+            <div className="lp-families">
+              {FAMILY_ORDER.map((f) => {
+                const w = q?.weightsUsed[f]
+                return (
+                  <div key={f} className="lp-family">
+                    <div className="lp-family__head">
+                      <span className="lp-family__name">{FAMILY_LABEL[f]}</span>
+                      <span className="lp-family__w sys-num">{w === undefined ? '—' : `${Math.round(w * 100)}%`}</span>
+                    </div>
+                    <span className="lp-family__bar" aria-hidden><span style={{ width: `${(w ?? 0) * 100 * 2.5}%` }} /></span>
+                    <p>{FAMILY_READS[f]}</p>
+                    <p className="lp-family__factors">{byFamily(f).join(' · ')}</p>
+                  </div>
+                )
+              })}
+              <p className="lp-note">Weights and factors as used in the recorded run. The momentum gate there was ×{q?.macroGate.toFixed(2)}.</p>
+            </div>
+            <div className="lp-method__side">
+              <div className="sys-panel">
+                <header className="sys-panel-head">
+                  <div className="sys-panel-head__title">
+                    <h3 className="sys-panel-title">Confidence and risk, itemised</h3>
+                    <span className="sys-panel-sub">{RECORDED_LABEL}</span>
+                  </div>
+                </header>
+                <div className="sys-panel-body lp-conclusion">
+                  <DeterministicConclusion a={run} />
                 </div>
-              ))}
-            </dl>
-          </aside>
-        </div>
-      </section>
-
-      {/* ---------- Live macro strip ---------- */}
-      <MacroStrip />
-
-      {/* ---------- Product ---------- */}
-      <section id="product" style={{ padding: 'clamp(64px, 9vw, 112px) 0' }}>
-        <div className="container" style={{ maxWidth: 880 }}>
-          <Reveal>
-            <p className="eyebrow" style={{ marginBottom: 14, textAlign: 'center' }}>
-              The terminal
-            </p>
-            <h2 className="h-section" style={{ textAlign: 'center', marginBottom: 18 }}>
-              A full readout, not a green number
-            </h2>
-            <p
-              className="body-copy"
-              style={{ textAlign: 'center', margin: '0 auto clamp(36px, 5vw, 56px)' }}
-            >
-              Type a ticker. In a few seconds you get the verdict, the raw signal
-              before macro dampening, price history, fundamentals, risk metrics
-              and the headlines that moved sentiment — all on one screen.
-            </p>
-          </Reveal>
-          <Reveal delay={80}>
-            <TerminalPreview />
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ---------- Methodology ---------- */}
-      <section
-        id="methodology"
-        className="hairline-top"
-        style={{ padding: 'clamp(64px, 9vw, 112px) 0', background: 'var(--surface)' }}
-      >
-        <div className="container" style={{ maxWidth: 880 }}>
-          <Reveal>
-            <p className="eyebrow" style={{ marginBottom: 14 }}>
-              Methodology
-            </p>
-            <h2 className="h-section" style={{ marginBottom: 22 }}>
-              How the verdict forms
-            </h2>
-            <div className="prose body-copy" style={{ marginBottom: 40 }}>
-              <p>
-                Every analysis runs the same five factors, in the same order,
-                with the same weights. There is no discretion in the loop and
-                nothing is hidden: the point of FinSignal is not that the
-                model is secret, but that it is consistent — the same stock on
-                the same day always produces the same readout.
-              </p>
-            </div>
-          </Reveal>
-
-          <Reveal delay={60}>
-            <div className="panel" style={{ overflowX: 'auto', marginBottom: 40 }}>
-              <table className="data-table" style={{ minWidth: 640 }}>
-                <caption className="visually-hidden">The five scoring factors and their weights</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Factor</th>
-                    <th scope="col">What it measures</th>
-                    <th scope="col">How it reads</th>
-                    <th scope="col" style={{ textAlign: 'right' }}>
-                      Weight
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {FACTORS.map((f) => (
-                    <tr key={f.factor}>
-                      <td className="mono" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        {f.factor}
-                      </td>
-                      <td style={{ color: 'var(--muted)' }}>{f.measures}</td>
-                      <td style={{ color: 'var(--muted)' }}>{f.reads}</td>
-                      <td className="num" style={{ textAlign: 'right', fontWeight: 500 }}>
-                        {f.weight}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Reveal>
-
-          <Reveal delay={100}>
-            <div className="split-2" style={{ gap: 20 }}>
-              <div className="card" style={{ padding: '24px 26px' }}>
-                <p className="label" style={{ marginBottom: 12 }}>
-                  Then: macro dampening
-                </p>
-                <p style={{ fontSize: '0.9375rem', lineHeight: 1.7, color: 'var(--muted)' }}>
-                  The factor sum maps to a raw signal from{' '}
-                  <strong style={{ color: 'var(--neg)', fontWeight: 560 }}>Strong Sell</strong> to{' '}
-                  <strong style={{ color: 'var(--pos)', fontWeight: 560 }}>Strong Buy</strong>. The{' '}
-                  Systemic Risk Multiplier — built from the Treasury yield
-                  spread, CPI trend and the Fed funds rate — then scales it.
-                  In a fragile regime (SRM above ~1.2), bullish verdicts are
-                  pulled toward caution. Both signals are always shown.
-                </p>
               </div>
-              <div className="card" style={{ padding: '24px 26px' }}>
-                <p className="label" style={{ marginBottom: 12 }}>
-                  What it is not
-                </p>
-                <p style={{ fontSize: '0.9375rem', lineHeight: 1.7, color: 'var(--muted)' }}>
-                  Not a price prediction, not a backtest promising returns, and
-                  not advice. It is a disciplined summary of public data —
-                  useful the way a pre-flight checklist is useful: it does not
-                  fly the plane, it stops you from skipping steps.
-                </p>
-              </div>
+              <ul className="lp-rules">
+                <li><b>Unknown is not zero.</b> A factor that could not be computed is reported as missing and costs confidence.</li>
+                <li><b>One source is not agreement.</b> Readings from a single vendor are labeled single-source.</li>
+                <li><b>Disagreement is shown, not averaged.</b> Conflicting vendor figures appear side by side.</li>
+                <li><b>Stale is not current.</b> Every observation carries its own date.</li>
+              </ul>
             </div>
-          </Reveal>
+          </div>
         </div>
       </section>
 
-      {/* ---------- News ---------- */}
-      <section id="news" className="hairline-top" style={{ padding: 'clamp(64px, 9vw, 112px) 0' }}>
-        <div className="container" style={{ maxWidth: 880 }}>
-          <Reveal>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 16,
-                marginBottom: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <h2 className="h-section">Market news, as it breaks</h2>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                <span className="live-dot" aria-hidden="true" />
-                <span className="label" style={{ color: 'var(--muted)' }}>
-                  Live
-                </span>
-              </span>
-            </div>
-            <p className="body-copy" style={{ marginBottom: 28 }}>
-              Aggregated from Yahoo Finance, MarketWatch and CNBC. The same feed
-              powers sentiment scoring inside the terminal.
-            </p>
-          </Reveal>
-          <Reveal delay={60}>
-            <NewsPreview />
-          </Reveal>
+      {/* ── news ─────────────────────────────────────────────────────── */}
+      <section id="news" className="lp-section lp-section--panel">
+        <div className="lp-container">
+          <header className="lp-section__head" data-reveal>
+            <p className="lp-eyebrow">Latest</p>
+            <h2 className="lp-h2">Market news, with its sources</h2>
+          </header>
+          <MarketNews count={5} />
         </div>
       </section>
 
-      {/* ---------- Pricing ---------- */}
-      <section
-        id="pricing"
-        className="hairline-top"
-        style={{ padding: 'clamp(64px, 9vw, 112px) 0', background: 'var(--surface)' }}
-      >
-        <div className="container" style={{ maxWidth: 880 }}>
-          <Reveal>
-            <p className="eyebrow" style={{ marginBottom: 14, textAlign: 'center' }}>
-              Pricing
-            </p>
-            <h2 className="h-section" style={{ textAlign: 'center', marginBottom: 14 }}>
-              Free to use daily. Pro when you need depth.
-            </h2>
-            <p className="body-copy" style={{ textAlign: 'center', margin: '0 auto clamp(36px, 5vw, 52px)' }}>
-              One plan, one price. No tiers to decode.
-            </p>
-          </Reveal>
-
-          <Reveal delay={60}>
-            <div className="split-2" style={{ alignItems: 'stretch', maxWidth: 760, margin: '0 auto' }}>
-              {/* Free */}
-              <div className="card" style={{ padding: '30px 30px 26px', display: 'flex', flexDirection: 'column' }}>
-                <p className="h-panel" style={{ marginBottom: 6 }}>
-                  Free
-                </p>
-                <p style={{ marginBottom: 22 }}>
-                  <span className="num" style={{ fontSize: '2rem', fontWeight: 600 }}>
-                    ₹0
-                  </span>
-                </p>
-                <ul style={{ listStyle: 'none', margin: '0 0 28px', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {[
-                    'Five analyses per day',
-                    'Full verdict and factor readout',
-                    'Three-month price charts',
-                    'Live macro conditions',
-                    'Headline sentiment (without links)',
-                  ].map((f) => (
-                    <li key={f} style={{ display: 'flex', gap: 10, fontSize: '0.9375rem', color: 'var(--muted)' }}>
-                      <span aria-hidden="true" style={{ color: 'var(--pos)', fontWeight: 600 }}>
-                        ✓
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/sign-up" className="btn btn--secondary" style={{ marginTop: 'auto' }}>
-                  Start free
-                </Link>
-              </div>
-
-              {/* Pro */}
-              <div
-                className="card"
-                style={{
-                  padding: '30px 30px 26px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderColor: 'var(--accent)',
-                  boxShadow: 'var(--shadow-2)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <p className="h-panel">Pro</p>
-                  <span className="badge badge--accent">Most useful</span>
-                </div>
-                <p style={{ marginBottom: 22 }}>
-                  <span className="num" style={{ fontSize: '2rem', fontWeight: 600 }}>
-                    ₹100
-                  </span>
-                  <span style={{ fontSize: '0.875rem', color: 'var(--faint)' }}> one-time</span>
-                </p>
-                <ul style={{ listStyle: 'none', margin: '0 0 28px', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {[
-                    'Unlimited analyses',
-                    'All timeframes — 1M to 5Y',
-                    'Full article access from sentiment',
-                    'Everything in Free',
-                  ].map((f) => (
-                    <li key={f} style={{ display: 'flex', gap: 10, fontSize: '0.9375rem', color: 'var(--muted)' }}>
-                      <span aria-hidden="true" style={{ color: 'var(--pos)', fontWeight: 600 }}>
-                        ✓
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/start" prefetch={false} className="btn btn--primary" style={{ marginTop: 'auto' }}>
-                  Go Pro in the terminal
-                </Link>
-              </div>
-            </div>
-            <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--faint)', marginTop: 20 }}>
-              Payments through Razorpay. Cancel anytime.
-            </p>
-          </Reveal>
+      {/* ── faq ──────────────────────────────────────────────────────── */}
+      <section className="lp-section lp-section--panel">
+        <div className="lp-container lp-faq">
+          <h2 className="lp-h2">Questions</h2>
+          {FAQ.map((item) => (
+            <details key={item.q} className="lp-faq__item">
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
         </div>
       </section>
 
-      {/* ---------- FAQ ---------- */}
-      <section className="hairline-top" style={{ padding: 'clamp(64px, 9vw, 112px) 0 clamp(80px, 10vw, 128px)' }}>
-        <div className="container" style={{ maxWidth: 720 }}>
-          <Reveal>
-            <h2 className="h-section" style={{ marginBottom: 28 }}>
-              Questions, answered plainly
-            </h2>
-          </Reveal>
-          <Reveal delay={60}>
-            <div className="hairline-top">
-              {FAQ.map((item) => (
-                <details key={item.q} className="faq-item">
-                  <summary>{item.q}</summary>
-                  <div className="faq-body">{item.a}</div>
-                </details>
-              ))}
-            </div>
-          </Reveal>
+      <section className="lp-section lp-final">
+        <div className="lp-container lp-final__inner">
+          <h2 className="lp-h2" data-reveal>Open a company. <em>Read the evidence.</em></h2>
+          <Link href="/start" prefetch={false} className="lp-btn lp-btn--primary">
+            Open the terminal<span className="lp-btn__arrow" aria-hidden>→</span>
+          </Link>
         </div>
       </section>
-    </>
+      <Atmosphere />
+    </div>
+  )
+}
+
+/** Decoration for the wide feature cards: shapes, not data — no axis, no
+ *  figure, nothing a reader could take for a live value. */
+function BentoViz({ kind }: { kind: 'rank' | 'lab' }) {
+  if (kind === 'rank') {
+    const rows = [0.92, 0.78, 0.64, 0.52, 0.38]
+    return (
+      <svg className="lp-bento__viz" viewBox="0 0 240 132" aria-hidden="true" focusable="false">
+        {rows.map((w, i) => (
+          <g key={i} transform={`translate(0 ${i * 26 + 4})`}>
+            <rect className="lp-bento__viz-dot" x="0" y="4" width="10" height="10" rx="3" />
+            <rect className="lp-bento__viz-track" x="22" y="6" width="214" height="6" rx="3" />
+            <rect className="lp-bento__viz-bar" x="22" y="6" width={214 * w} height="6" rx="3" />
+          </g>
+        ))}
+      </svg>
+    )
+  }
+  return (
+    <svg className="lp-bento__viz" viewBox="0 0 240 132" aria-hidden="true" focusable="false">
+      <path className="lp-bento__viz-base" d="M0 96 H240" />
+      <path className="lp-bento__viz-area" d="M0 100 C30 92 46 70 72 74 S118 96 140 62 S196 40 240 24 V132 H0 Z" />
+      <path className="lp-bento__viz-line" d="M0 100 C30 92 46 70 72 74 S118 96 140 62 S196 40 240 24" />
+      <path className="lp-bento__viz-ghost" d="M0 104 C40 100 60 90 92 96 S150 104 176 90 S220 84 240 80" />
+      <circle className="lp-bento__viz-end" cx="240" cy="24" r="4" />
+    </svg>
   )
 }

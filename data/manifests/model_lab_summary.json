@@ -1,0 +1,3961 @@
+{
+  "campaign_id": "MODEL-LAB-001",
+  "campaign_stage": "SMOKE_COMPLETE",
+  "completed_inner_trial_count": 568,
+  "completed_trials": [
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1000.0
+      },
+      "metrics": {
+        "hac_t_stat": -2.625273339866544,
+        "mean_rank_ic": -0.06200037021730255,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10994366176397607
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.114984
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-99FC93AF2F38B8D9"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "metrics": {
+        "hac_t_stat": 0.6118923401203475,
+        "mean_rank_ic": 0.018228487071770102,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.014082867236389799
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.136649
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-669CC9BFEC512354"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1000.0
+      },
+      "metrics": {
+        "hac_t_stat": -0.11307741568452685,
+        "mean_rank_ic": -0.004432168533774424,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03562749766011715
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.159195
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-DF8111FD093B7873"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": 0.34191314836139736,
+        "mean_rank_ic": 0.01745692978121306,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.022518642563888528
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.191189
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-4FFAC2FCA7F86D54"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": 1.3021334645556106,
+        "mean_rank_ic": 0.03684984072412957,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 2.1601834758300242e-05
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.212555
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-27920AD9738579AA"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1000.0
+      },
+      "metrics": {
+        "hac_t_stat": 0.12375935484285305,
+        "mean_rank_ic": 0.005741957691405397,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.037045398100269473
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.24112
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-D33A2A23B4672C51"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1000.0
+      },
+      "metrics": {
+        "hac_t_stat": 0.0324659766497393,
+        "mean_rank_ic": 0.001763653577234825,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.04036629177665104
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.273682
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-223B789405CD7E9C"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0
+      },
+      "metrics": {
+        "hac_t_stat": 0.5275096255984228,
+        "mean_rank_ic": 0.024569969635785418,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.015961550924963434
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.300232
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-4A74169EE21B0193"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001
+      },
+      "metrics": {
+        "hac_t_stat": -2.7712439233479156,
+        "mean_rank_ic": -0.06759204800716963,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.11485896166288094
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.116137
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-DFD9A3912AB8421B"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": 0.6199635220040433,
+        "mean_rank_ic": 0.018523642464082033,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.013801003364681066
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.147669
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-F27A7FE60AA6EC38"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001
+      },
+      "metrics": {
+        "hac_t_stat": -0.12798072899583288,
+        "mean_rank_ic": -0.005226859275219367,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.033053551907042664
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.168254
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-E77C6D0DF81B36F1"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": 0.3425719337624682,
+        "mean_rank_ic": 0.01753164048533165,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.022436961245698245
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.21868
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-585A98886EE33729"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": 1.3088518164626461,
+        "mean_rank_ic": 0.03719598190833678,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.00033022669061376353
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.25651
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C53B28DAA731F517"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0005
+      },
+      "metrics": {
+        "hac_t_stat": 0.10402213409471314,
+        "mean_rank_ic": 0.00494562668420545,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03657843777187008
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.263397
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-4B01B02997A27C46"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001
+      },
+      "metrics": {
+        "hac_t_stat": 0.043839627380339814,
+        "mean_rank_ic": 0.0023340448757719567,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03963109926933851
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.306899
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-CA7B5C400A7F910D"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": 0.525431872436767,
+        "mean_rank_ic": 0.02439909364003205,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.016107001057306097
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.366127
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-AE4F826BADE1332B"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "l1_ratio": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -2.7618124605282772,
+        "mean_rank_ic": -0.06601757831667979,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.11402212655032212
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.113496
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-5E3CB544DC0C4789"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": 0.6250810877221654,
+        "mean_rank_ic": 0.018729942491449707,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.013698734470149174
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.149086
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-12AA3DEDB7BBD6A9"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "l1_ratio": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -0.10983894586152464,
+        "mean_rank_ic": -0.00446442598882335,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.033012967871958315
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.183308
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-1175E2DF7D031EC2"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": 0.34205330251726057,
+        "mean_rank_ic": 0.017536474875926137,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.022387194063629764
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.214204
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-297CD1A95C59057E"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": 1.3096715740118414,
+        "mean_rank_ic": 0.0374197869590145,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.0005985972406811896
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.27506
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-8357E94D08C6F73F"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "l1_ratio": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": 0.12455115611232041,
+        "mean_rank_ic": 0.006247949090944261,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03390853176684144
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.265118
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C8D0822013AAA47B"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": 0.04914672974397606,
+        "mean_rank_ic": 0.002611461459016099,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03939502994076122
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.318525
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-5C8B8EB4A46F19EA"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": 0.5233647974418989,
+        "mean_rank_ic": 0.024350161890017798,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.01615063990242451
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.357426
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-80209A0FAA7C7EF6"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": -2.9272969787424157,
+        "mean_rank_ic": -0.061904620130504746,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10910559386709659
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.193699
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-133648633898772C"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.5
+      },
+      "metrics": {
+        "hac_t_stat": 0.754215119304785,
+        "mean_rank_ic": 0.023177579516942784,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.009691968247117516
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.208521
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-690EF38AC0AE34E6"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": -0.10151891763447778,
+        "mean_rank_ic": -0.004177597334866525,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03577698180266524
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.330039
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-94F0A78D3ADD5E23"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": 0.30155729218827354,
+        "mean_rank_ic": 0.016377027761855224,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.022970233367432726
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.320866
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-116DE092C62BACC6"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.5
+      },
+      "metrics": {
+        "hac_t_stat": 1.4755467405224758,
+        "mean_rank_ic": 0.045768176096699656,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.008975890065965123
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.360344
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-16B5158A5F04BD97"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 1.5
+      },
+      "metrics": {
+        "hac_t_stat": 0.1897692615918537,
+        "mean_rank_ic": 0.008663132685641107,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.033942918491546833
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.405734
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-E6E7619FBD6133E7"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": -0.003539781003691613,
+        "mean_rank_ic": -0.0001949867082632438,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.04152577548562508
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.478107
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-A94099F23BA67DF0"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.5
+      },
+      "metrics": {
+        "hac_t_stat": 0.46927667563696246,
+        "mean_rank_ic": 0.02346474173459197,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.016525708684036012
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.480508
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-A0E8D23E2E7F93E3"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": -3.294736993494286,
+        "mean_rank_ic": -0.07073310129924078,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.1154500229441493
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.120297
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-194EAC54B963CDCD"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": 1.1378448884341086,
+        "mean_rank_ic": 0.029374988902841605,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.003398764335744424
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.144986
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C95308FE9F6616C2"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": -0.035267166678795536,
+        "mean_rank_ic": -0.0014369308737859192,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.030911886469436226
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.174053
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-0716AB767018770D"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": 0.2832682719157975,
+        "mean_rank_ic": 0.01455128787752958,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.02268144701580413
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.213401
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-B860209E7EFF11D4"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05,
+        "epsilon": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": 1.6268769627491537,
+        "mean_rank_ic": 0.06633914624685391,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.03469994766801951
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.246771
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-001BB4C157BD15AB"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": -0.039873433661238036,
+        "mean_rank_ic": -0.002055771971602955,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.04168012296651207
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.275746
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-11A21FE4101F1D7C"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05,
+        "epsilon": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": -0.08451154310999758,
+        "mean_rank_ic": -0.005046762334907557,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.04426257709347861
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.316144
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-0BDAB90798BB5E40"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1e-05,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": 0.439859032244028,
+        "mean_rank_ic": 0.024540575262753717,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.013886002511753419
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.347013
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-D3755D72A9BC7825"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -1.7426911240643819,
+        "mean_rank_ic": -0.04807097643367866,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.07286053758813216
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.117099
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-DC95BD4C338F6510"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0,
+        "variance": 0.9
+      },
+      "metrics": {
+        "hac_t_stat": 0.5388543885707563,
+        "mean_rank_ic": 0.019640964209866035,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.0034856956399790945
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.147055
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-CC635CA6AE645948"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 10.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -0.374474414458618,
+        "mean_rank_ic": -0.015617516038661163,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03922771743919164
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.176522
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-E9DCFB4B9C9F5C12"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 1.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": 0.574006984289611,
+        "mean_rank_ic": 0.036043556565042954,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.008105769836645692
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.209408
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-4D27801BD3580EFA"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": 1.098833810377384,
+        "mean_rank_ic": 0.03831284012488376,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.017654568686946103
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.238243
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-5F90022BCF36931C"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0,
+        "variance": 0.9
+      },
+      "metrics": {
+        "hac_t_stat": -0.2940910396604148,
+        "mean_rank_ic": -0.01633270542731278,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.0477460791319356
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.272143
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-62883A8BF44BCAA9"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 10.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -0.4235138832383931,
+        "mean_rank_ic": -0.024697702346479028,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.056002102158319765
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.296729
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C655821E5AF4819A"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "alpha": 100.0,
+        "variance": 0.9
+      },
+      "metrics": {
+        "hac_t_stat": 0.20478328185216163,
+        "mean_rank_ic": 0.013311146946039848,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.015227015588352035
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.331811
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-04C6E903DBACB932"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 2
+      },
+      "metrics": {
+        "hac_t_stat": -2.7766927899523655,
+        "mean_rank_ic": -0.06629474662232122,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10566170870440922
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.110384
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-DFD784238AECB71E"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 2
+      },
+      "metrics": {
+        "hac_t_stat": 1.067886208171434,
+        "mean_rank_ic": 0.03848078962146094,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.014187779655571952
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.140017
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-359668E9CD769017"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 2
+      },
+      "metrics": {
+        "hac_t_stat": -0.23766949247270408,
+        "mean_rank_ic": -0.009397761830955306,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.034338541906877074
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.167369
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-69AF72CC68D56AB4"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 8
+      },
+      "metrics": {
+        "hac_t_stat": 0.3044827015539404,
+        "mean_rank_ic": 0.01573603667399113,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.02314332801810815
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.224172
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-79B9031C90F8F8D3"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 12
+      },
+      "metrics": {
+        "hac_t_stat": 1.4091844681213341,
+        "mean_rank_ic": 0.042439444532595155,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.005774347352673424
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.257492
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-5D0A2054F93F8C4D"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 12
+      },
+      "metrics": {
+        "hac_t_stat": 0.1379885731445662,
+        "mean_rank_ic": 0.0061937633481766756,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03668237390193588
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.30195
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-675FC6AB23FE243C"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 4
+      },
+      "metrics": {
+        "hac_t_stat": 0.04607583060031802,
+        "mean_rank_ic": 0.0022460112959717744,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.03710639276303084
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.295555
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C5E478101DEFAB80"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "components": 4
+      },
+      "metrics": {
+        "hac_t_stat": 1.2079884654947988,
+        "mean_rank_ic": 0.058973580709203034,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": -0.02285236045450785
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.332745
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-764D11D5DA874629"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.865566471027423,
+        "mean_rank_ic": -0.042378717483901485,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.34346595398312446
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 15.622038
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-BA036EEFDE861FF1"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 80
+      },
+      "metrics": {
+        "hac_t_stat": -0.6105731631595185,
+        "mean_rank_ic": -0.015677936050067124,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.25061768649692373
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.998505
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-49AF78322D38819B"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.4,
+        "min_samples_leaf": 75,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.5227387787068458,
+        "mean_rank_ic": -0.04674970053603136,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.4134536018298043
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 4.616672
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-BD08C9AD0B25B773"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 80
+      },
+      "metrics": {
+        "hac_t_stat": 0.5824645528907217,
+        "mean_rank_ic": 0.017130718403345055,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.34893061314174817
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 2.69296
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-758C8CD5BA815E47"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": 1.6939163891684408,
+        "mean_rank_ic": 0.0656572478967745,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.27914911339108733
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 3.163312
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-856771866E7C22B4"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 0.5026899320463671,
+        "mean_rank_ic": 0.013357629847493478,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.5700532004968075
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 15.117854
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-400B7433B1F63A8F"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.05,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": 2.04210504087042,
+        "mean_rank_ic": 0.039405947631389104,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.4079597641859492
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 3.57696
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-B5C11A02EAF4D475"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.05,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": -2.8950615588098527,
+        "mean_rank_ic": -0.06160008530901255,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.49416344227539766
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 3.292798
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C2DDB2AB33184506"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.9110460564651333,
+        "mean_rank_ic": 0.07666024245671409,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.4795678238319582
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 10.690575
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-618220DB55596E3F"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 80
+      },
+      "metrics": {
+        "hac_t_stat": 0.8447094704827871,
+        "mean_rank_ic": 0.022588626490014328,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.13742048296054324
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 1.643868
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-BCC6FE7AF712876D"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.05,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": 1.3692169436857315,
+        "mean_rank_ic": 0.0454250036019884,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.3646159018645477
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 4.889938
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-E95EBC63C1F2D85F"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.8,
+        "min_samples_leaf": 75,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.042551623580399,
+        "mean_rank_ic": 0.04447223070845816,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.4130894083065979
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 20.767566
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-FBEBBD766AE0B263"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.02,
+        "max_depth": 5,
+        "max_iter": 300,
+        "min_samples_leaf": 80
+      },
+      "metrics": {
+        "hac_t_stat": 1.7454692584663918,
+        "mean_rank_ic": 0.07540933342156947,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.21290175145854978
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 4.427585
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-6F0264F61C5EEAB2"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 10,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 2.3758156545293807,
+        "mean_rank_ic": 0.06407426417652282,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.40064758861760164
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 1,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 67.77673
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-98005CBA167966DC"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -2.087019316245034,
+        "mean_rank_ic": -0.05635816760016724,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.5859178504576525
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 14.057966
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-8254D6A4CA3D161F"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.126291255933304,
+        "mean_rank_ic": 0.03634330378028425,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.2592437831665445
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 10.770968
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-AA55CB7E55DA9D60"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 75,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.6269191669307546,
+        "mean_rank_ic": 0.054343664639490454,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.15628911331362721
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 2,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 26.890574
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-1A3B73BD014872DB"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 0.61577866093842,
+        "mean_rank_ic": 0.02349317972602776,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.49224239730143654
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 31.881473
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-C50EE437EC82BAD2"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 12,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 2.0538360782983305,
+        "mean_rank_ic": 0.09834703075500972,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.3954664050548388
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 7,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 19.933506
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-180BAD009BA1DAE8"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.8,
+        "min_samples_leaf": 75,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.4006621826948016,
+        "mean_rank_ic": 0.034586699419799916,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.15689476141351444
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 3,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 62.383936
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-9F4543FDCC479517"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -0.14018103625966744,
+        "mean_rank_ic": -0.0024196154896057045,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.1853262663942513
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 4,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 74.51662
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-6F67651119E67AC3"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 1.210300105273068,
+        "mean_rank_ic": 0.046903813353998895,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.16014408100111996
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 5,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 42.52945
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-1C6A1EF0995AA9F2"
+    },
+    {
+      "git_commit": "6f9b5a075b7a3922fe05c5cbea6986b5ebb4c695",
+      "hyperparameters": {
+        "max_depth": 10,
+        "max_features": 0.4,
+        "min_samples_leaf": 75,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": 0.8643330297904752,
+        "mean_rank_ic": 0.03223299936412931,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.34309939514193943
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 6,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 75.986169
+      },
+      "status": "COMPLETE",
+      "trial_id": "MLT-28EF5DBF3F985E6D"
+    }
+  ],
+  "dataset": {
+    "dataset_id": "ds-richpit2-6368cccdb94c62d0",
+    "feature_set_id": "F0_UNAFFECTED_BASELINE_26",
+    "integrity_status": "VALIDATED_UNAFFECTED_BLOCK",
+    "revenue_affected_feature_sets": "BLOCKED"
+  },
+  "declared_families": [
+    {
+      "configurations": [
+        {
+          "alpha": 0.1
+        },
+        {
+          "alpha": 1.0
+        },
+        {
+          "alpha": 10.0
+        },
+        {
+          "alpha": 100.0
+        },
+        {
+          "alpha": 1000.0
+        }
+      ],
+      "family": "linear",
+      "model_name": "ridge",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 1e-05
+        },
+        {
+          "alpha": 0.0001
+        },
+        {
+          "alpha": 0.0005
+        },
+        {
+          "alpha": 0.001
+        }
+      ],
+      "family": "linear",
+      "model_name": "lasso",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 0.0001,
+          "l1_ratio": 0.2
+        },
+        {
+          "alpha": 0.0001,
+          "l1_ratio": 0.5
+        },
+        {
+          "alpha": 0.0001,
+          "l1_ratio": 0.8
+        },
+        {
+          "alpha": 0.0005,
+          "l1_ratio": 0.2
+        },
+        {
+          "alpha": 0.0005,
+          "l1_ratio": 0.5
+        },
+        {
+          "alpha": 0.0005,
+          "l1_ratio": 0.8
+        },
+        {
+          "alpha": 0.001,
+          "l1_ratio": 0.2
+        },
+        {
+          "alpha": 0.001,
+          "l1_ratio": 0.5
+        },
+        {
+          "alpha": 0.001,
+          "l1_ratio": 0.8
+        }
+      ],
+      "family": "linear",
+      "model_name": "elastic_net",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 0.0001,
+          "epsilon": 1.2
+        },
+        {
+          "alpha": 0.001,
+          "epsilon": 1.2
+        },
+        {
+          "alpha": 0.0001,
+          "epsilon": 1.5
+        },
+        {
+          "alpha": 0.001,
+          "epsilon": 1.5
+        }
+      ],
+      "family": "linear_robust",
+      "model_name": "huber",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 1e-05,
+          "epsilon": 0.05
+        },
+        {
+          "alpha": 0.0001,
+          "epsilon": 0.05
+        },
+        {
+          "alpha": 1e-05,
+          "epsilon": 0.1
+        },
+        {
+          "alpha": 0.0001,
+          "epsilon": 0.1
+        }
+      ],
+      "family": "linear_robust",
+      "model_name": "sgd_huber",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 1.0,
+          "variance": 0.8
+        },
+        {
+          "alpha": 10.0,
+          "variance": 0.8
+        },
+        {
+          "alpha": 100.0,
+          "variance": 0.8
+        },
+        {
+          "alpha": 1.0,
+          "variance": 0.9
+        },
+        {
+          "alpha": 10.0,
+          "variance": 0.9
+        },
+        {
+          "alpha": 100.0,
+          "variance": 0.9
+        },
+        {
+          "alpha": 1.0,
+          "variance": 0.95
+        },
+        {
+          "alpha": 10.0,
+          "variance": 0.95
+        },
+        {
+          "alpha": 100.0,
+          "variance": 0.95
+        }
+      ],
+      "family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "components": 2
+        },
+        {
+          "components": 4
+        },
+        {
+          "components": 8
+        },
+        {
+          "components": 12
+        }
+      ],
+      "family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "max_depth": 6,
+          "max_features": 0.4,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 6,
+          "max_features": 0.8,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 6,
+          "max_features": 0.4,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 6,
+          "max_features": 0.8,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 10,
+          "max_features": 0.4,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 10,
+          "max_features": 0.8,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 10,
+          "max_features": 0.4,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 10,
+          "max_features": 0.8,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        }
+      ],
+      "family": "bagging",
+      "model_name": "random_forest",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "max_depth": 8,
+          "max_features": 0.4,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 8,
+          "max_features": 0.8,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 8,
+          "max_features": 0.4,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 8,
+          "max_features": 0.8,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 12,
+          "max_features": 0.4,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 12,
+          "max_features": 0.8,
+          "min_samples_leaf": 25,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 12,
+          "max_features": 0.4,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        },
+        {
+          "max_depth": 12,
+          "max_features": 0.8,
+          "min_samples_leaf": 75,
+          "n_estimators": 300
+        }
+      ],
+      "family": "bagging",
+      "model_name": "extra_trees",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.02,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.02,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.02,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.02,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.02,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.02,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.02,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.02,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.05,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.05,
+          "max_depth": 3,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.05,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        },
+        {
+          "l2_regularization": 10.0,
+          "learning_rate": 0.05,
+          "max_depth": 5,
+          "max_iter": 300,
+          "min_samples_leaf": 80
+        }
+      ],
+      "family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "budget": 24,
+          "early_stopping": "inner_only"
+        }
+      ],
+      "family": "gpu_boosting",
+      "model_name": "xgboost",
+      "package": "xgboost",
+      "reason": "optional dependency `xgboost` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "budget": 24,
+          "early_stopping": "inner_only"
+        }
+      ],
+      "family": "gpu_boosting",
+      "model_name": "lightgbm",
+      "package": "lightgbm",
+      "reason": "optional dependency `lightgbm` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "budget": 18,
+          "early_stopping": "inner_only"
+        }
+      ],
+      "family": "gpu_boosting",
+      "model_name": "catboost",
+      "package": "catboost",
+      "reason": "optional dependency `catboost` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "architectures": [
+            [
+              128,
+              64
+            ],
+            [
+              128,
+              64,
+              32
+            ]
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ]
+        }
+      ],
+      "family": "neural",
+      "model_name": "torch_mlp",
+      "package": "torch",
+      "reason": "optional dependency `torch` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [],
+      "family": "tabular_transformer",
+      "model_name": "ft_transformer",
+      "package": "torch",
+      "reason": "optional dependency `torch` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "implementation and licence review required after classical families",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "budget": 8
+        }
+      ],
+      "family": "additive",
+      "model_name": "explainable_boosting",
+      "package": "interpret",
+      "reason": "optional dependency `interpret` is not installed",
+      "route": "MAC_CPU",
+      "scientific_note": "",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "alpha": 0.0,
+          "quantile": 0.4
+        },
+        {
+          "alpha": 0.0001,
+          "quantile": 0.4
+        },
+        {
+          "alpha": 0.0,
+          "quantile": 0.5
+        },
+        {
+          "alpha": 0.0001,
+          "quantile": 0.5
+        },
+        {
+          "alpha": 0.0,
+          "quantile": 0.6
+        },
+        {
+          "alpha": 0.0001,
+          "quantile": 0.6
+        }
+      ],
+      "family": "robust_quantile",
+      "model_name": "quantile_regression",
+      "package": null,
+      "reason": "adapter pending",
+      "route": "MAC_CPU",
+      "scientific_note": "adapter pending",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [],
+      "family": "ranking",
+      "model_name": "lambdamart_date_query_v2",
+      "package": "lightgbm",
+      "reason": "optional dependency `lightgbm` is not installed",
+      "route": "KAGGLE_GPU",
+      "scientific_note": "materially new date-query formulation must be frozen before execution",
+      "status": "BLOCKED"
+    },
+    {
+      "configurations": [
+        {
+          "weights": "equal_by_family"
+        }
+      ],
+      "family": "ensemble",
+      "model_name": "rank_average",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "POST_OUTER",
+      "scientific_note": "only out-of-fold predictions",
+      "status": "READY"
+    },
+    {
+      "configurations": [
+        {
+          "meta_model": "ridge"
+        }
+      ],
+      "family": "stacking",
+      "model_name": "linear_oof_stacker",
+      "package": null,
+      "reason": "declared search space is executable on its assigned route",
+      "route": "POST_OUTER",
+      "scientific_note": "base inputs must be out-of-fold",
+      "status": "READY"
+    }
+  ],
+  "exp012": {
+    "status": "BLOCKED_NOT_PREPARED"
+  },
+  "families": {
+    "bagging": {
+      "complete": 143,
+      "failed": 12,
+      "trials": 155
+    },
+    "histogram_boosting": {
+      "complete": 136,
+      "failed": 6,
+      "trials": 142
+    },
+    "linear": {
+      "complete": 168,
+      "failed": 22,
+      "trials": 190
+    },
+    "linear_dimension_reduced": {
+      "complete": 120,
+      "failed": 6,
+      "trials": 126
+    },
+    "linear_robust": {
+      "complete": 80,
+      "failed": 6,
+      "trials": 86
+    }
+  },
+  "holdout": {
+    "end": "2026-08-28",
+    "start": "2025-08-26",
+    "touched": false
+  },
+  "interpretation": "Exploratory validation evidence; requires separately preregistered replication.",
+  "promotion": "NOT_ASSESSED",
+  "research_status": "EXPLORATORY",
+  "retained_noncomplete_trials": [
+    {
+      "error": "inner plan yielded one split on outer fold 0; MODEL-LAB requires exactly three",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "metrics": {
+        "hac_t_stat": -2.6264032320712682,
+        "mean_rank_ic": -0.05823862309000127,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": 0.10565492078864697
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.112842
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-7ED8E18C2D4F1604"
+    },
+    {
+      "error": "trial identity omitted inner_cv_scheme; retained but superseded by schema-correct rerun",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.290884
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-B7D1E84AF0F83BC6"
+    },
+    {
+      "error": "trial identity omitted inner_cv_scheme; retained but superseded by schema-correct rerun",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.229013
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-188488CBBEBB6B41"
+    },
+    {
+      "error": "trial identity omitted inner_cv_scheme; retained but superseded by schema-correct rerun",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": -2.624937096772949,
+        "mean_rank_ic": -0.058210645764355355,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": 0.10561586102655374
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.101829
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-0C131038F87777D9"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.248992
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-F786DACD098E3C11"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.224828
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-7D03329A6C364797"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": -2.624937096772949,
+        "mean_rank_ic": -0.058210645764355355,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10561586102655374
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.101869
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-B4EA36D3153496B4"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.277996
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-CDA693E158BC6265"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.5
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.242266
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-D3CFD71DBE8EDF53"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.5
+      },
+      "metrics": {
+        "hac_t_stat": -2.6279149269409783,
+        "mean_rank_ic": -0.05873317889342987,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.1063814632623768
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.110606
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-F91D2F2EB5C2CB85"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 1.589011
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-43671DF8B09C8D33"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 1.971903
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-06D6435F589882C1"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": -0.4539198905153327,
+        "mean_rank_ic": -0.011465735419765467,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.24785720632828517
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.668671
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-09807D4AA13BABF3"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 9.605231
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-73BB23FB8B5212EB"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 16.790173
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-5F8A27959F481616"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.4589656050817164,
+        "mean_rank_ic": -0.04443243597711645,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.48973773723738695
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 7.320942
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-DB5ED28E6A4DECC1"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.287118
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-5FB07D8340CC3A72"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.0001
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.2512
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-BDE21CBAA3C96DFA"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "alpha": 0.0001
+      },
+      "metrics": {
+        "hac_t_stat": -2.62915497579806,
+        "mean_rank_ic": -0.05902408757364902,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10675483021433341
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.110782
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-54894E8DD27CF223"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 34.929059
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-EE5F0087B3264797"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 68.5014
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-CC807FD287306CE6"
+    },
+    {
+      "error": "smoke ran before its Model Lab method code was committed; retained as non-reproducible development evidence",
+      "git_commit": "ccb88c3a72e7c92507da7a928153139b974893b8",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.865566471027423,
+        "mean_rank_ic": -0.042378717483901485,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.34346595398312446
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 14.967637
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-16C0F863483476CF"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.262922
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-C1D885FF31357F0B"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.229809
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-E5AAB37BC620F9BB"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.1
+      },
+      "metrics": {
+        "hac_t_stat": -2.624937096772949,
+        "mean_rank_ic": -0.058210645764355355,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10561586102655374
+      },
+      "model_family": "linear",
+      "model_name": "ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.108648
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-FCD577B4AB486861"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 1e-05
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.249785
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-FE102BDDBB4DDFF5"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.243519
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-9BAD8A5F3D34CFCF"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001
+      },
+      "metrics": {
+        "hac_t_stat": -2.62915497579806,
+        "mean_rank_ic": -0.05902408757364902,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10675483021433341
+      },
+      "model_family": "linear",
+      "model_name": "lasso",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.111459
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-6583E3199C1F7244"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.2
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.24917
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-4B3F36433A4AE153"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.5
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.258355
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-2D0E59188580F84C"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.5
+      },
+      "metrics": {
+        "hac_t_stat": -2.6279149269409783,
+        "mean_rank_ic": -0.05873317889342987,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.1063814632623768
+      },
+      "model_family": "linear",
+      "model_name": "elastic_net",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.109524
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-2C296AD1462FE350"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.403193
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-00367763101B2CD8"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.384431
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-6ECCD4F6CAD07219"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.001,
+        "epsilon": 1.2
+      },
+      "metrics": {
+        "hac_t_stat": -2.9272969787424157,
+        "mean_rank_ic": -0.061904620130504746,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10910559386709659
+      },
+      "model_family": "linear_robust",
+      "model_name": "huber",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.172189
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-E9A45C17D5B9E185"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 1e-05,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.245609
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-0540E3AB817C2A74"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.254098
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-8227B682DCE0EBFB"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "epsilon": 0.05
+      },
+      "metrics": {
+        "hac_t_stat": -3.7224511326350904,
+        "mean_rank_ic": -0.07218158334231867,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.11731214583366983
+      },
+      "model_family": "linear_robust",
+      "model_name": "sgd_huber",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.111042
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-B6BD01746BAA5DF1"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 1.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.250886
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-954C25378219E828"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 10.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.250526
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-E30DB18A06CF5A0C"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "alpha": 1.0,
+        "variance": 0.8
+      },
+      "metrics": {
+        "hac_t_stat": -1.7433035798351733,
+        "mean_rank_ic": -0.048079260321486406,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.07284233772916007
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pca_ridge",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.11185
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-EB451E58CFA4A9A6"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "components": 2
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.235918
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-9EFC5457F637D1F1"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "components": 4
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 0.235821
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-B017DBDC44F93078"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "components": 2
+      },
+      "metrics": {
+        "hac_t_stat": -2.7766927899523655,
+        "mean_rank_ic": -0.06629474662232122,
+        "runtime_warnings": [
+          "RuntimeWarning: divide by zero encountered in matmul",
+          "RuntimeWarning: invalid value encountered in matmul",
+          "RuntimeWarning: overflow encountered in matmul"
+        ],
+        "train_validation_ic_gap": 0.10566170870440922
+      },
+      "model_family": "linear_dimension_reduced",
+      "model_name": "pls",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.106197
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-E974886C54CC55DA"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 34.948249
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-9FC97A6709D66BC6"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 68.415439
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-AB15BEF2D2AD67B7"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 6,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.865566471027423,
+        "mean_rank_ic": -0.042378717483901485,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.34346595398312446
+      },
+      "model_family": "bagging",
+      "model_name": "random_forest",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 15.05816
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-7290CEB075CCD989"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.4,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 9.928421
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-F1D83CD91F5567B2"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 17.390173
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-979E30BC055EF46F"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "max_depth": 8,
+        "max_features": 0.8,
+        "min_samples_leaf": 25,
+        "n_estimators": 300
+      },
+      "metrics": {
+        "hac_t_stat": -1.4589656050817164,
+        "mean_rank_ic": -0.04443243597711645,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.48973773723738695
+      },
+      "model_family": "bagging",
+      "model_name": "extra_trees",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 7.387512
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-4469839460484D87"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "l2_regularization": 1.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 1.771944
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-EFDB5CF833187FA9"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": null,
+        "mean_rank_ic": null,
+        "runtime_warnings": null,
+        "train_validation_ic_gap": null
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "INNER_SELECTION",
+      "runtime": {
+        "wall_seconds": 1.593617
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-0AAEFABF09595729"
+    },
+    {
+      "error": "INVALID_METHOD: stage-1 smoke evaluated outer fold 0 before the complete declared search grid; retained for audit and excluded from inference.",
+      "git_commit": "a11b5e2604c44910cde21001b26b9702fb8daac1",
+      "hyperparameters": {
+        "l2_regularization": 10.0,
+        "learning_rate": 0.02,
+        "max_depth": 3,
+        "max_iter": 300,
+        "min_samples_leaf": 30
+      },
+      "metrics": {
+        "hac_t_stat": -0.4539198905153327,
+        "mean_rank_ic": -0.011465735419765467,
+        "runtime_warnings": [],
+        "train_validation_ic_gap": 0.24785720632828517
+      },
+      "model_family": "histogram_boosting",
+      "model_name": "hist_gradient_boosting",
+      "outer_fold": 0,
+      "phase": "OUTER_EVALUATION",
+      "runtime": {
+        "wall_seconds": 0.655693
+      },
+      "status": "INVALID",
+      "trial_id": "MLT-1F46BBE5CE8C93ED"
+    }
+  ],
+  "smoke_outcome": {
+    "candidate_eligible": false,
+    "negative_outer_rank_ic": 25,
+    "outer_evaluations": 79,
+    "positive_outer_rank_ic": 54,
+    "reason": "Smoke evidence cannot establish eligibility; the complete eight-fold campaign and preregistered confirmation remain required."
+  },
+  "statuses": {
+    "BLOCKED": 0,
+    "COMPLETE": 647,
+    "FAILED": 0,
+    "INVALID": 52,
+    "PRUNED": 0,
+    "RESOURCE_LIMIT": 0
+  },
+  "trials": 699
+}

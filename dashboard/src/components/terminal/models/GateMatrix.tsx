@@ -1,0 +1,238 @@
+/**
+ * Gate matrix: every registered model against every production threshold.
+ *
+ * A per-model gate list answers "why is this one blocked". The matrix answers
+ * the more useful question — which gate blocks everything. When one column is
+ * uniformly unmet across 103 entries, the constraint is structural rather than
+ * a property of any model, and no amount of further search will move it.
+ *
+ * "Not recorded" is drawn distinctly from a numeric failure, because they call
+ * for different work: one needs a measurement, the other needs a better model.
+ */
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+
+import { Panel, StateBlock, Strip, Value } from '@/components/system'
+import { DataTable, type DataColumn } from '@/components/system/DataTable'
+import { ObjectHeader, StripSkeleton, TableSkeleton, Toolbar, ToolbarGroup, ToolbarSpacer } from '@/components/system/composition'
+import { readerError } from '@/lib/failure'
+import { readResource } from '@/lib/resource'
+
+interface Entry {
+  key: string
+  model_id: string
+  label: string
+  status: string
+  thresholds_not_met?: Record<string, unknown>
+  candidate_thresholds_not_met?: Record<string, unknown>
+  eligible_for?: string[]
+}
+
+interface Registry {
+  entries?: Entry[]
+  summary?: { entries: number }
+  promotion_gates?: Record<string, string[]>
+}
+
+type Cell = 'met' | 'unrecorded' | 'failed'
+
+function cellFor(entry: Entry, gate: string, scope: 'production' | 'candidate'): Cell {
+  const map = scope === 'production' ? entry.thresholds_not_met : entry.candidate_thresholds_not_met
+  if (!map || !(gate in map)) return 'met'
+  return map[gate] === 'not recorded' ? 'unrecorded' : 'failed'
+}
+
+export default function GateMatrix() {
+  const [registry, setRegistry] = useState<Registry | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [scope, setScope] = useState<'production' | 'candidate'>('production')
+
+  useEffect(() => {
+    let alive = true
+    readResource<Registry>('/api/ml/registry', 'artifact')
+      .then((d) => { if (alive) setRegistry(d) })
+      .catch((e: Error) => { if (alive) setError(e.message) })
+    return () => { alive = false }
+  }, [])
+
+  const entries = useMemo(() => registry?.entries ?? [], [registry])
+
+  const gates = useMemo(() => {
+    const seen = new Set<string>()
+    for (const e of entries) {
+      const map = scope === 'production' ? e.thresholds_not_met : e.candidate_thresholds_not_met
+      for (const g of Object.keys(map ?? {})) seen.add(g)
+    }
+    return [...seen].sort()
+  }, [entries, scope])
+
+  /** Per-gate tally. The column totals are the point of the surface. */
+  const tally = useMemo(() => {
+    return gates.map((g) => {
+      let unrecorded = 0
+      let failed = 0
+      for (const e of entries) {
+        const c = cellFor(e, g, scope)
+        if (c === 'unrecorded') unrecorded += 1
+        else if (c === 'failed') failed += 1
+      }
+      return { gate: g, unrecorded, failed, met: entries.length - unrecorded - failed }
+    })
+  }, [gates, entries, scope])
+
+  const columns: DataColumn<{ gate: string; unrecorded: number; failed: number; met: number }>[] = [
+    { key: 'gate', header: 'Gate', width: '30%', sort: (r) => r.gate, text: (r) => r.gate, render: (r) => <span className="sys-mono">{r.gate}</span> },
+    { key: 'met', header: 'Met', unit: 'of all entries', numeric: true, sort: (r) => r.met, render: (r) => <span className="sys-num sys-pos">{r.met}</span> },
+    { key: 'failed', header: 'Failed', unit: 'a number missed it', numeric: true, sort: (r) => r.failed, render: (r) => <span className="sys-num sys-neg">{r.failed}</span> },
+    { key: 'unrec', header: 'Not recorded', unit: 'never measured', numeric: true, sort: (r) => r.unrecorded, render: (r) => <span className="sys-num sys-null">{r.unrecorded}</span> },
+    {
+      key: 'bar', header: 'Share met',
+      render: (r) => {
+        const total = Math.max(1, entries.length)
+        return (
+          <span style={{ display: 'inline-flex', width: 120, height: 8, border: '1px solid var(--rule)' }} title={`${r.met} of ${total} met`}>
+            <span style={{ width: `${(r.met / total) * 100}%`, background: 'var(--e-pos)', opacity: 0.6 }} />
+            <span style={{ width: `${(r.failed / total) * 100}%`, background: 'var(--e-neg)', opacity: 0.6 }} />
+            <span style={{ width: `${(r.unrecorded / total) * 100}%`, background: 'var(--ink-faint)', opacity: 0.35 }} />
+          </span>
+        )
+      },
+    },
+  ]
+
+  if (error) return <Panel title="Gate matrix" state="unavailable"><StateBlock state="unavailable" title="The registry could not be read" detail={`${readerError(error)}.`} /></Panel>
+  if (!registry) {
+    return (
+      <>
+        <StripSkeleton items={4} />
+        <Panel title="Gates" state="waking" flush><TableSkeleton rows={8} columns={5} /></Panel>
+      </>
+    )
+  }
+  if (!gates.length) return <Panel title="Gate matrix" state="unavailable"><StateBlock
+      state="unavailable"
+      title="No gate outcomes are recorded"
+      detail="No registry entry carries a threshold result for this scope. Nothing has been evaluated against it rather than everything having passed."
+    /></Panel>
+
+  const universal = tally.filter((t) => t.met === 0)
+  const eligible = entries.filter((e) => (e.eligible_for ?? []).length > 0).length
+
+  return (
+    <>
+      <ObjectHeader
+        glyph="⊟"
+        name="Gates"
+        kind="what blocks promotion, across the program"
+        state={universal.length ? 'blocked' : 'recorded'}
+        detail={universal.length ? `${universal.length} gates no model has cleared` : 'every gate cleared by at least one model'}
+        facts={[
+          { label: 'Entries', value: entries.length, digits: 0, kind: 'count' },
+          { label: 'Gates', value: gates.length, digits: 0 , kind: 'count'},
+          { label: 'Cleared by none', value: universal.length, digits: 0, kind: 'count' },
+          { label: 'Eligible', value: eligible, digits: 0, kind: 'count' },
+        ]}
+      />
+
+      <Strip metrics={[
+        { label: 'Eligible for something', value: eligible, digits: 0, kind: 'count' },
+      ]} />
+
+      {universal.length ? (
+        <Panel title="Blocked for everyone" state="blocked">
+          <p style={{ margin: '0 0 var(--d-2)', fontSize: 'var(--t-body)', lineHeight: 'var(--lh-body)', color: 'var(--ink-muted)', maxWidth: '86ch' }}>
+            No registered model has met {universal.length === 1 ? 'this gate' : 'these gates'}.
+            That is a statement about the research program rather than about any
+            model in it: more search will not move a threshold that nothing has
+            ever cleared.
+          </p>
+          <table className="sys-table sys-table--compact">
+            <tbody>
+              {universal.map((u) => (
+                <tr key={u.gate}>
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{u.gate}</td>
+                  <td className="num sys-neg"><Value value={u.failed} kind="count" /> failed</td>
+                  <td className="num sys-null"><Value value={u.unrecorded} kind="count" /> never measured</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      ) : null}
+
+      <Toolbar>
+        <ToolbarGroup label="trace">
+          <Link href="/terminal/evidence" className="sys-btn">evidence</Link>
+          <Link href="/terminal/experiments" className="sys-btn">experiments</Link>
+          <Link href="/terminal/compare" className="sys-btn">compare</Link>
+        </ToolbarGroup>
+        <ToolbarSpacer />
+        <span className="sys-meta">absent evidence is not passing evidence</span>
+      </Toolbar>
+
+      <Panel
+        title="Gates"
+        subtitle={`${scope} thresholds`}
+        flush
+        actions={
+          <div className="sys-seg">
+            {(['production', 'candidate'] as const).map((s) => (
+              <button key={s} className="sys-btn" aria-pressed={scope === s} onClick={() => setScope(s)}>{s}</button>
+            ))}
+          </div>
+        }
+      >
+        <DataTable
+          columns={columns} rows={tally} rowKey={(r) => r.gate}
+          density="normal" filterPlaceholder="filter gates"
+          initialSort={{ key: 'met', direction: 'asc' }}
+        />
+      </Panel>
+
+      <Panel title="Matrix" subtitle={`${entries.length} entries × ${gates.length} gates`} flush>
+        <div className="sys-scroll-x" style={{ maxHeight: 420, overflowY: 'auto' }}>
+          <table className="sys-table sys-table--compact">
+            <thead>
+              <tr>
+                <th scope="col" style={{ position: 'sticky', left: 0, zIndex: 3, background: 'var(--p-sunken)', minWidth: 190 }}>Model</th>
+                {gates.map((g) => (
+                  <th scope="col" key={g} className="num" style={{ minWidth: 74 }} title={g}>
+                    {g.length > 12 ? `${g.slice(0, 11)}…` : g}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.key}>
+                  <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--p-panel)', fontFamily: 'var(--font-mono)' }} title={e.key}>
+                    {e.model_id.length > 24 ? `${e.model_id.slice(0, 23)}…` : e.model_id}
+                  </td>
+                  {gates.map((g) => {
+                    const c = cellFor(e, g, scope)
+                    return (
+                      <td key={g} className="num" title={`${e.model_id} · ${g}: ${c === 'met' ? 'met' : c === 'unrecorded' ? 'never measured' : 'failed on a recorded value'}`}>
+                        {c === 'met'
+                          ? <span className="sys-pos">✓</span>
+                          : c === 'failed'
+                            ? <span className="sys-neg">✕</span>
+                            : <span className="sys-null">·</span>}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--d-4)', padding: 'var(--d-2) var(--d-3)', borderTop: '1px solid var(--rule)', flexWrap: 'wrap' }}>
+          <span className="sys-meta"><span className="sys-pos">✓</span> met</span>
+          <span className="sys-meta"><span className="sys-neg">✕</span> a recorded value missed the threshold</span>
+          <span className="sys-meta"><span className="sys-null">·</span> never measured — unmet, and needing a measurement rather than a better model</span>
+        </div>
+      </Panel>
+    </>
+  )
+}

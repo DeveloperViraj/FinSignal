@@ -1,0 +1,449 @@
+"""
+Tests for the Groq LLM explanation service (schema v4) and its observability.
+
+The Groq client is always mocked — these tests never touch the network.
+"""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import MagicMock
+
+import pytest
+
+from src.services import llm_service
+from src.services.metrics import llm_metrics
+
+
+VALID_MODEL_JSON = {
+    "executive_summary": "The engine holds at elevated risk: RSI-14 at 28.4 is oversold while SRM 1.2 dampens upside.",
+    "investment_thesis": "The technical setup is oversold but the elevated macro regime caps conviction at a Hold.",
+    "verdict_rationale": "Momentum is oversold while the macro gate discounts upside, netting out to Hold.",
+    "bull_case": "RSI-14 at 28.4 is oversold and Sharpe of 1.6 shows strong risk-adjusted returns to date.",
+    "bear_case": "SRM at 1.2 marks an elevated macro regime that has historically capped upside for this signal.",
+    "technical_reasoning": "RSI-14 at 28.4 flags oversold; Sharpe of 1.6 shows strong risk-adjusted returns.",
+    "momentum_impact": "Momentum contributed +0.180, led by oversold RSI-14.",
+    "quality_impact": "Quality contributed +0.040 on stable profitability.",
+    "value_impact": "Value contributed +0.020 on a modest forward PE gap.",
+    "pead_impact": "Post-earnings drift contributed +0.010, a minor tailwind.",
+    "macro_reasoning": "SRM at 1.2 marks an elevated regime, pulling the raw signal one step toward caution.",
+    "news_reasoning": "Sentiment was unavailable for this run.",
+    "risk_reasoning": "Risk is HIGH given the elevated macro regime.",
+    "confidence_reason": "Base 50% plus 20% for technical agreement equals the supplied 70%.",
+    "top_positive_narrative": "Oversold momentum and stable quality factors are the biggest positive drivers.",
+    "top_negative_narrative": "The elevated macro regime is the single largest drag on the score.",
+    "key_catalysts": ["Oversold RSI-14 at 28.4", "Sharpe ratio 1.6"],
+    "key_risks": ["Elevated macro regime at SRM 1.2"],
+    "things_to_watch": ["Whether SRM eases back below 1.0", "RSI-14 crossing back above 40"],
+    "investment_horizon": "medium-term, tied to the 21-day momentum window",
+    "market_outlook": "Elevated but not critical regime at SRM 1.2.",
+    "conclusion": "Hold reflects oversold momentum offset by an elevated macro regime; a break below SRM 1.0 is the key swing factor.",
+}
+
+
+def make_payload(**overrides):
+    payload = {
+        "ticker": "NVDA",
+        "decision": {
+            "recommendation": "HOLD",
+            "confidence": 70,
+            "confidence_breakdown": [
+                {"component": "Base confidence", "points": 50},
+                {"component": "Technical signal agrees with the final verdict", "points": 20},
+            ],
+            "risk": "HIGH",
+            "verdict": "Hold",
+            "rationale": "Neutral sentiment (avg score 0.05); Macro environment is ELEVATED (SRM=1.2)",
+        },
+        "macro": {"risk_multiplier": 1.2},
+        "technicals": {"rsi_14": 28.4, "sharpe_ratio": 1.6},
+        "sentiment": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def fake_client_returning(*contents: str) -> MagicMock:
+    """A stub Groq client whose successive calls return the given strings."""
+    client = MagicMock()
+    responses = []
+    for content in contents:
+        completion = MagicMock()
+        completion.choices = [MagicMock()]
+        completion.choices[0].message.content = content
+        responses.append(completion)
+    client.chat.completions.create.side_effect = responses
+    return client
+
+
+@pytest.fixture(autouse=True)
+def clean_service(monkeypatch):
+    """Reset client/cache/metrics and configure a fake key for each test."""
+    llm_service.reset_client_for_tests()
+    llm_service._missing_key_logged = False
+    monkeypatch.setenv("GROQ_API_KEY", "test_key_placeholder")
+    yield
+    llm_service.reset_client_for_tests()
+
+
+def install_client(monkeypatch, client) -> None:
+    monkeypatch.setattr(llm_service, "_get_client", lambda: client)
+
+
+class TestSuccessPath:
+    def test_valid_response_is_parsed_and_flagged_generated(self, monkeypatch):
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is True
+        assert result["cached"] is False
+        assert result["executive_summary"].startswith("The engine holds")
+        assert result["key_catalysts"] == VALID_MODEL_JSON["key_catalysts"]
+        assert result["bull_case"] == VALID_MODEL_JSON["bull_case"]
+        assert result["bear_case"] == VALID_MODEL_JSON["bear_case"]
+        assert result["things_to_watch"] == VALID_MODEL_JSON["things_to_watch"]
+        assert result["investment_thesis"] == VALID_MODEL_JSON["investment_thesis"]
+        assert result["verdict_rationale"] == VALID_MODEL_JSON["verdict_rationale"]
+        assert result["momentum_impact"] == VALID_MODEL_JSON["momentum_impact"]
+        assert result["quality_impact"] == VALID_MODEL_JSON["quality_impact"]
+        assert result["value_impact"] == VALID_MODEL_JSON["value_impact"]
+        assert result["pead_impact"] == VALID_MODEL_JSON["pead_impact"]
+        assert result["top_positive_narrative"] == VALID_MODEL_JSON["top_positive_narrative"]
+        assert result["top_negative_narrative"] == VALID_MODEL_JSON["top_negative_narrative"]
+        assert result["conclusion"] == VALID_MODEL_JSON["conclusion"]
+        assert client.chat.completions.create.call_count == 1
+
+    def test_v4_report_fields_are_optional_in_model_output(self, monkeypatch):
+        # A model reply that omits the newer report keys must still validate —
+        # they default to "" / [] rather than failing the whole explanation.
+        v4_only_keys = (
+            "bull_case", "bear_case", "things_to_watch", "investment_thesis",
+            "verdict_rationale", "momentum_impact", "quality_impact", "value_impact",
+            "pead_impact", "top_positive_narrative", "top_negative_narrative", "conclusion",
+        )
+        partial = {k: v for k, v in VALID_MODEL_JSON.items() if k not in v4_only_keys}
+        client = fake_client_returning(json.dumps(partial))
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is True
+        for key in v4_only_keys:
+            assert result[key] in ("", [])
+
+    def test_deterministic_fields_come_from_engine_not_model(self, monkeypatch):
+        # The v2 schema has no recommendation/confidence/risk keys at all —
+        # they must be attached verbatim from the decision block.
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["recommendation"] == "HOLD"
+        assert result["confidence"] == 70
+        assert result["risk"] == "HIGH"
+
+    def test_model_supplied_deterministic_fields_are_ignored(self, monkeypatch):
+        # Even if the model smuggles decision fields into its JSON, the
+        # strict schema drops unknown keys and engine values are attached.
+        tampered = {**VALID_MODEL_JSON, "recommendation": "BUY", "confidence": 99, "risk": "LOW"}
+        client = fake_client_returning(json.dumps(tampered))
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["recommendation"] == "HOLD"
+        assert result["confidence"] == 70
+        assert result["risk"] == "HIGH"
+
+    def test_factor_impacts_are_attached_verbatim_alongside_the_narrative(self, monkeypatch):
+        # factor_impacts is engine arithmetic (see _group_factor_impacts) — it
+        # must reach the final result unchanged, same guarantee as
+        # recommendation/confidence/risk.
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        impacts = llm_service._group_factor_impacts([
+            {"name": "r12_1", "family": "momentum", "contribution": 0.18},
+        ])
+        result = llm_service.explain_recommendation(make_payload(factor_impacts=impacts))
+
+        assert result["factor_impacts"]["momentum"]["contribution"] == 0.18
+
+    def test_deterministic_request_parameters(self, monkeypatch):
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        llm_service.explain_recommendation(make_payload())
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["temperature"] == 0.2
+        assert kwargs["top_p"] == 1
+        assert kwargs["reasoning_effort"] == "medium"
+        assert kwargs["max_completion_tokens"] == 4096
+        assert kwargs["stream"] is False
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+
+class TestFailurePaths:
+    def test_invalid_json_retries_once_then_falls_back(self, monkeypatch):
+        client = fake_client_returning("not json at all", "still {not json")
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert client.chat.completions.create.call_count == 2  # initial + 1 corrective
+        assert result["generated"] is False
+        assert result["recommendation"] == "HOLD"
+        assert "Neutral sentiment" in result["executive_summary"]
+        # Components are points on the 0-100 scale, never a percent change.
+        assert "Base confidence (+50 pts)" in result["confidence_reason"]
+        assert "%" not in result["confidence_reason"]
+        assert result["key_risks"] == [], "the rationale was relabelled as risks"
+
+    def test_invalid_then_valid_json_succeeds_on_retry(self, monkeypatch):
+        client = fake_client_returning("garbage", json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is True
+        assert client.chat.completions.create.call_count == 2
+
+    def test_provider_error_falls_back_without_raising(self, monkeypatch):
+        client = MagicMock()
+        client.chat.completions.create.side_effect = ValueError("boom")
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is False
+        assert result["confidence"] == 70
+        # v4 narrative-only fields default cleanly in the fallback path too.
+        assert result["bull_case"] == ""
+        assert result["bear_case"] == ""
+        assert result["things_to_watch"] == []
+        assert result["momentum_impact"] == ""
+
+    def test_fallback_still_states_factor_impact_subtotals_as_bare_facts(self, monkeypatch):
+        # Even with no model, the engine's own factor-impact subtotals (see
+        # _group_factor_impacts) are real numbers already computed upstream —
+        # the fallback may state them plainly, just without narrative flair.
+        client = MagicMock()
+        client.chat.completions.create.side_effect = ValueError("boom")
+        install_client(monkeypatch, client)
+
+        payload = make_payload(factor_impacts=llm_service._group_factor_impacts([
+            {"name": "r12_1", "family": "momentum", "contribution": 0.18},
+            {"name": "gross_profitability", "family": "quality", "contribution": 0.04},
+        ]))
+
+        result = llm_service.explain_recommendation(payload)
+
+        assert result["generated"] is False
+        assert "+0.180" in result["momentum_impact"]
+        assert "+0.040" in result["quality_impact"]
+        assert result["value_impact"] == ""  # no fundamental factors supplied
+        assert result["pead_impact"] == ""
+
+    def test_transient_errors_retry_with_backoff(self, monkeypatch):
+        class RateLimitError(Exception):
+            status_code = 429
+
+        completion = MagicMock()
+        completion.choices = [MagicMock()]
+        completion.choices[0].message.content = json.dumps(VALID_MODEL_JSON)
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = [RateLimitError(), completion]
+        install_client(monkeypatch, client)
+        monkeypatch.setattr(llm_service.time, "sleep", lambda s: None)  # no real waiting
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is True
+        assert client.chat.completions.create.call_count == 2
+
+    def test_unconfigured_service_serves_fallback_without_client(self, monkeypatch):
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        client = MagicMock()
+        install_client(monkeypatch, client)
+
+        result = llm_service.explain_recommendation(make_payload())
+
+        assert result["generated"] is False
+        client.chat.completions.create.assert_not_called()
+
+
+class TestCache:
+    def test_second_identical_request_is_served_from_cache(self, monkeypatch):
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        first = llm_service.explain_recommendation(make_payload())
+        second = llm_service.explain_recommendation(make_payload())
+
+        assert client.chat.completions.create.call_count == 1
+        assert first["cached"] is False
+        assert second["cached"] is True
+        assert second["executive_summary"] == first["executive_summary"]
+
+    def test_fallbacks_are_not_cached(self, monkeypatch):
+        client = MagicMock()
+        client.chat.completions.create.side_effect = ValueError("down")
+        install_client(monkeypatch, client)
+
+        llm_service.explain_recommendation(make_payload())
+        llm_service.explain_recommendation(make_payload())
+
+        # Both attempts hit the (failing) provider — failures never poison the cache.
+        assert client.chat.completions.create.call_count == 2
+
+
+class TestObservability:
+    def test_metrics_record_success_latency_and_model(self, monkeypatch):
+        client = fake_client_returning(json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        llm_service.explain_recommendation(make_payload())
+        snap = llm_metrics.snapshot()
+
+        assert snap["calls"] == 1
+        assert snap["generated"] == 1
+        assert snap["fallbacks"] == 0
+        assert snap["last_model"] == llm_service._model_name()
+        assert snap["last_prompt_version"] == llm_service.PROMPT_VERSION
+        assert snap["last_generated_at"] is not None
+        assert snap["avg_latency_ms"] >= 0
+
+    def test_metrics_record_cache_hits_and_retries(self, monkeypatch):
+        client = fake_client_returning("garbage", json.dumps(VALID_MODEL_JSON))
+        install_client(monkeypatch, client)
+
+        llm_service.explain_recommendation(make_payload())  # 1 validation retry
+        llm_service.explain_recommendation(make_payload())  # cache hit
+        snap = llm_metrics.snapshot()
+
+        assert snap["validation_retries"] == 1
+        assert snap["cache_hits"] == 1
+        assert snap["calls"] == 1
+
+    def test_metrics_record_fallbacks(self, monkeypatch):
+        client = MagicMock()
+        client.chat.completions.create.side_effect = ValueError("down")
+        install_client(monkeypatch, client)
+
+        llm_service.explain_recommendation(make_payload())
+        snap = llm_metrics.snapshot()
+
+        assert snap["fallbacks"] == 1
+        assert snap["generated"] == 0
+
+
+class TestFactorImpactGrouping:
+    """
+    _group_factor_impacts is pure and never invents a number — it only sums
+    the engine's own per-factor contributions into presentation buckets.
+    """
+
+    def test_quality_and_value_are_split_from_the_engine_fundamental_family(self):
+        factors = [
+            {"name": "gross_profitability", "family": "quality", "contribution": 0.03},
+            {"name": "net_issuance", "family": "quality", "contribution": 0.01},
+            {"name": "earnings_yield", "family": "fundamental", "contribution": 0.02},
+            {"name": "pe_gap", "family": "fundamental", "contribution": -0.01},
+            {"name": "pead", "family": "fundamental", "contribution": 0.015},
+        ]
+        impacts = llm_service._group_factor_impacts(factors)
+
+        assert impacts["quality"]["contribution"] == 0.04
+        assert impacts["value"]["contribution"] == 0.01  # earnings_yield + pe_gap, pead excluded
+        assert impacts["pead"]["contribution"] == 0.015
+        assert [f["name"] for f in impacts["value"]["factors"]] == ["earnings_yield", "pe_gap"]
+
+    def test_reversal_family_folds_into_momentum(self):
+        factors = [
+            {"name": "r21", "family": "momentum", "contribution": 0.10},
+            {"name": "reversal", "family": "reversal", "contribution": -0.02},
+        ]
+        impacts = llm_service._group_factor_impacts(factors)
+
+        assert impacts["momentum"]["contribution"] == 0.08
+        assert {f["name"] for f in impacts["momentum"]["factors"]} == {"r21", "reversal"}
+
+    def test_missing_families_produce_empty_buckets_not_errors(self):
+        impacts = llm_service._group_factor_impacts([])
+        assert all(bucket["contribution"] == 0.0 and bucket["factors"] == [] for bucket in impacts.values())
+
+    def test_unscored_factors_with_null_contribution_are_skipped(self):
+        impacts = llm_service._group_factor_impacts([{"name": "sentiment", "family": "news", "contribution": None}])
+        assert impacts["news"]["factors"] == []
+
+
+class TestPayloadBuilder:
+    def test_build_payload_carries_decision_breakdown_and_truncates_headlines(self):
+        sentiment = {
+            "average_score": 0.2,
+            "dominant_label": "Bullish",
+            "headline_count": 12,
+            "headlines": [{"title": f"h{i}", "score": 0.1, "label": "Neutral",
+                           "source": "x", "url": "", "published_at": ""} for i in range(12)],
+        }
+        breakdown = [{"component": "Base confidence", "points": 50}]
+        payload = llm_service.build_payload(
+            ticker="NVDA", recommendation="BUY", confidence=80, risk="LOW",
+            verdict="Buy", rationale="r", macro={"risk_multiplier": 1.0},
+            technicals={"rsi_14": 50}, sentiment=sentiment,
+            confidence_breakdown=breakdown,
+        )
+        assert payload["decision"]["recommendation"] == "BUY"
+        assert payload["decision"]["confidence_breakdown"] == breakdown
+        assert len(payload["sentiment"]["headlines"]) == 8  # capped
+        assert payload["sentiment"]["headline_count"] == 12
+
+    def test_build_payload_derives_factor_impacts_from_quant_factors(self):
+        quant = {
+            "raw_score": 0.2,
+            "factors": [
+                {"name": "r12_1", "family": "momentum", "contribution": 0.12},
+                {"name": "gross_profitability", "family": "quality", "contribution": 0.03},
+                {"name": "pead", "family": "fundamental", "contribution": 0.01},
+            ],
+        }
+        payload = llm_service.build_payload(
+            ticker="NVDA", recommendation="BUY", confidence=80, risk="LOW",
+            verdict="Buy", rationale="r", macro={}, technicals={}, sentiment=None,
+            quant=quant,
+        )
+        assert payload["factor_impacts"]["momentum"]["contribution"] == 0.12
+        assert payload["factor_impacts"]["quality"]["contribution"] == 0.03
+        assert payload["factor_impacts"]["pead"]["contribution"] == 0.01
+
+    def test_build_payload_with_no_quant_yields_empty_factor_impacts(self):
+        payload = llm_service.build_payload(
+            ticker="NVDA", recommendation="BUY", confidence=80, risk="LOW",
+            verdict="Buy", rationale="r", macro={}, technicals={}, sentiment=None,
+        )
+        assert all(b["factors"] == [] for b in payload["factor_impacts"].values())
+
+
+def test_a_failed_narrative_still_offers_its_evidence_snapshot(monkeypatch):
+    """A DeepSeek outage at research time must not remove re-explanation:
+    the evidence is held, so its id travels with the engine's fallback."""
+    from src.services import narrative_pipeline
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key-placeholder")
+    payload = make_payload()
+
+    def failed(p, depth):
+        narrative_pipeline._remember_snapshot(p)
+        return None
+
+    monkeypatch.setattr(narrative_pipeline, "generate", failed)
+    result = llm_service.explain_recommendation(payload, "advanced")
+    assert result["generated"] is False
+    assert result["snapshot_id"] == narrative_pipeline.snapshot_id(payload)
+    assert result["depth"] == "advanced"
+    narrative_pipeline.reset_for_tests()

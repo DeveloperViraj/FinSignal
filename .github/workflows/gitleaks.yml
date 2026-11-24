@@ -18,3 +18,7 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # .gitleaks.toml uses top-level [[allowlists]] with targetRules,
+          # which gitleaks reads from 8.25.0 on. The action's default (8.24.3)
+          # ignores them and reports every allowlisted line as a leak.
+          GITLEAKS_VERSION: 8.30.1
