@@ -6,6 +6,20 @@ test that has been shown capable of failing.
 
 ## V15 — research platform (in progress)
 
+### Free deployment, first week (2026-11-24)
+
+**Alert checks run Monday to Friday (UTC) only.** Kept awake all week, the free backend used about
+744 of the 750 instance hours a Render workspace gets a month, so any other free service in the same
+workspace could push it into suspension before the month ended. The markets are shut at weekends, so
+no alert can change then; the backend now sleeps from Saturday to Monday and uses about 550 hours at
+most. The first visit at a weekend waits about a minute while it wakes. Supabase still sees activity
+every weekday, well inside its seven-day pause.
+
+**`free_deploy.py vercel`** sends `.env.vercel` to the Vercel project through the signed-in Vercel
+CLI, one variable per call (`vercel api --input` takes an object, not the array the endpoint also
+accepts), with `NEXT_PUBLIC_*` values plain and the rest encrypted. It runs the CLI from outside the
+checkout, because a `.vercel` link left in it chose the upstream author's team and was refused.
+
 ### No paid tier (2026-11-24)
 
 **Everything is free.** The ₹100 Pro upgrade and its Razorpay checkout are gone: the payment routes,
