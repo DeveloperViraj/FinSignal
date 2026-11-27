@@ -15,7 +15,7 @@ import MarketNews from '@/components/terminal/home/MarketNews'
 export const metadata: Metadata = {
   // Inherits the root default title; the template would double the brand here.
   description:
-    'Equity research you can audit: a deterministic engine sets every signal from evidence traced to its provider, and an explanation layer narrates it with citations.',
+    'Free stock research on one page: live price, financials, news and SEC filings, with a Buy, Hold or Sell signal and the reasons behind it. Every number shows its source.',
   alternates: { canonical: '/' },
 }
 
@@ -93,12 +93,12 @@ export default function LandingPage() {
       <section className="lp-hero">
         <div className="lp-container lp-hero__grid">
           <div className="lp-hero__copy">
-            <p className="lp-eyebrow">Evidence-grounded equity research</p>
-            <h1 className="lp-title">Research you can audit, <em>line by line.</em></h1>
+            <p className="lp-eyebrow">Free stock research</p>
+            <h1 className="lp-title">Research any stock <em>on one page.</em></h1>
             <p className="lp-lede">
-              A deterministic engine sets every signal from evidence it can trace to a provider.
-              Disagreements and gaps stay visible. An explanation layer then narrates the result — and
-              has to cite the evidence for every sentence it keeps.
+              Search for a company. FinSignal brings its live price, financials, news and SEC filings
+              together, then gives a Buy, Hold or Sell signal and shows you why. Every number shows
+              where it came from.
             </p>
             <div className="lp-cta">
               <Link href="/start" prefetch={false} className="lp-btn lp-btn--primary">
@@ -107,9 +107,9 @@ export default function LandingPage() {
               <Link href="/#how" className="lp-btn">How a signal is made</Link>
             </div>
             <ul className="lp-proof" aria-label="What every run guarantees">
-              <li>Deterministic engine</li>
-              <li>Every figure sourced</li>
-              <li>AI explains, never decides</li>
+              <li>Live prices</li>
+              <li>Every number sourced</li>
+              <li>The signal is math, not AI</li>
             </ul>
             <p className="lp-fine">Free, with no daily limit and no card.</p>
           </div>
